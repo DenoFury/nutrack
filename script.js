@@ -1,12 +1,13 @@
 const KEY = 'fittrack-v2', $ = s => document.querySelector(s);
 const DN = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], CATS = ['Breakfast','Lunch','Dinner','Snacks'];
 const uid = () => Math.random().toString(36).slice(2, 9);
-const mk = (name, list) => ({id:uid(), name, ex:list.map(([n, sets, reps, kg]) => ({id:uid(), name:n, sets, reps, kg}))});
+const mk = (name, list) => ({id:uid(), name, ex:list.map(([n, sets, reps, kg]) => ({id:uid(), name:n, s:[...Array(sets)].map((_, i) => ({kg:Array.isArray(kg) ? kg[i] : kg, reps}))}))});
 const fresh = () => ({ goals:{kcal:2200, water:2500, protein:140}, days:{}, done:{}, sel:{}, last:'',
-  routines:[mk('Push day', [['Bench press',4,8,60],['Overhead press',3,10,35],['Incline dumbbell press',3,10,22],['Triceps pushdown',3,12,25]]),
+  routines:[mk('Push day', [['Bench press',4,8,[50,60,60,65]],['Overhead press',3,10,35],['Incline dumbbell press',3,10,22],['Triceps pushdown',3,12,25]]),
             mk('Pull day', [['Deadlift',3,5,90],['Lat pulldown',4,10,50],['Seated cable row',3,10,45],['Barbell curl',3,12,25]])] });
 let S = fresh();
-try { Object.assign(S, JSON.parse(localStorage.getItem(KEY))); } catch(e){}
+const migrate = o => { o.routines.forEach(r => r.ex.forEach(e => { if (!e.s) { e.s = [...Array(e.sets || 3)].map(() => ({kg:e.kg || 0, reps:e.reps || 10})); delete e.sets; delete e.reps; delete e.kg; } })); return o; };
+try { Object.assign(S, JSON.parse(localStorage.getItem(KEY))); migrate(S); } catch(e){}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} };
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -22,7 +23,7 @@ const sum = (a, f) => a.reduce((s, x) => s + f(x), 0);
 const kc = d => sum(get(d).meals, m => m.kcal), pr = d => sum(get(d).meals, m => m.p || 0), wt = d => sum(get(d).water, x => x);
 const rt = () => S.routines.find(r => r.id === (S.sel[cur] || S.last)) || S.routines[0];
 const plan = () => (rt() || {ex:[]}).ex;
-const dn = (d, e) => Math.min(e.sets, (S.done[d] || {})[e.id] || 0);
+const dn = (d, e) => { const v = (S.done[d] || {})[e.id]; return Array.isArray(v) ? v.filter(Boolean).length : 0; };
 const pct = (v, g) => g ? v / g : 0;
 
 const ring = (p, c, big, sub) => `<svg viewBox="0 0 100 100" class="ring" role="img" aria-label="${big} ${sub}">
@@ -37,7 +38,7 @@ function bars(fn, goal, color){
 
 const V = {
   dash(){
-    const g = S.goals, k = kc(cur), w = wt(cur), ex = plan(cur), tot = sum(ex, e => e.sets), d = sum(ex, e => dn(cur, e)), left = g.kcal - k;
+    const g = S.goals, k = kc(cur), w = wt(cur), ex = plan(cur), tot = sum(ex, e => e.s.length), d = sum(ex, e => dn(cur, e)), left = g.kcal - k;
     return `<div class="grid">
 <div class="card"><h3>Calories</h3>${ring(pct(k,g.kcal), left<0?'var(--bad)':'var(--kcal)', Math.abs(left), left<0?'kcal over':'kcal left')}
 <p class="det">${k} eaten of ${g.kcal}<br>Protein ${pr(cur)} of ${g.protein} g</p></div>
@@ -59,19 +60,20 @@ const V = {
       (l.length ? l.map(x => `<div class="li"><div class="g">${esc(x.n)}${x.p ? `<small>${x.p} g protein</small>` : ''}</div><b>${x.kcal}</b><button class="x" data-act="delm" data-id="${x.id}" aria-label="Delete ${esc(x.n)}">×</button></div>`).join('') : '<p class="empty">Nothing added yet.</p>') + '</div>'; }).join('');
   },
   train(){
-    const R = S.routines, r = rt(), ex = r ? r.ex : [], fin = ex.filter(e => dn(cur, e) >= e.sets).length;
-    const inp = (f, e, extra) => `<label>${f === 'kg' ? 'kg' : f === 'reps' ? 'Reps' : 'Sets'}<input type="number" min="0" ${extra} value="${e[f]}" data-f="${f}" data-id="${e.id}"></label>`;
+    const R = S.routines, r = rt(), ex = r ? r.ex : [], isDone = e => dn(cur, e) >= e.s.length, fin = ex.filter(isDone).length;
     return `<div class="rts">${R.map(x => `<button class="rt ${r && x.id === r.id ? 'on' : ''}" data-act="pick" data-id="${x.id}">${esc(x.name)}</button>`).join('')}</div>` +
     (r ? `<div class="card"><div class="sh"><h3>${esc(r.name)}</h3><span>${fin} of ${ex.length} done</span></div>` +
-      (ex.length ? ex.map(e => { const n = dn(cur, e), ok = n >= e.sets;
-        return `<div class="ex ${ok ? 'fin' : ''}"><div class="top"><strong>${esc(e.name)}</strong><button class="dn ${ok ? 'on' : ''}" data-act="done" data-id="${e.id}">${ok ? 'Done ✓' : 'Mark done'}</button></div>
-<div class="flds">${inp('kg', e, 'step="0.5"')}${inp('reps', e, '')}${inp('sets', e, 'max="10"')}</div>
-<div class="chips">${[...Array(e.sets)].map((_, i) => `<button class="chip ${i < n ? 'on' : ''}" data-act="set" data-id="${e.id}" data-i="${i+1}" aria-label="Set ${i+1}">${i+1}</button>`).join('')}</div></div>`; }).join('')
+      (ex.length ? ex.map(e => { const ok = isDone(e), dd = (S.done[cur] || {})[e.id] || [];
+        return `<div class="ex ${ok ? 'fin' : ''}"><div class="top"><strong>${esc(e.name)}</strong><button class="dn ${ok ? 'on' : ''}" data-act="done" data-id="${e.id}">${ok ? 'All done ✓' : 'Mark all done'}</button></div>
+${e.s.map((s, i) => `<div class="sr"><button class="chip ${dd[i] ? 'on' : ''}" data-act="set" data-id="${e.id}" data-i="${i}" aria-label="Set ${i+1} done">${i+1}</button>
+<label>kg<input type="number" min="0" step="0.5" value="${s.kg}" data-f="kg" data-i="${i}" data-id="${e.id}"></label>
+<label>Reps<input type="number" min="1" value="${s.reps}" data-f="reps" data-i="${i}" data-id="${e.id}"></label></div>`).join('')}
+<div class="acts" style="justify-content:flex-start;margin-top:10px"><button class="ghost" data-act="addset" data-id="${e.id}">+ Add set</button><button class="ghost" data-act="delset" data-id="${e.id}">− Remove set</button></div></div>`; }).join('')
         : '<p class="empty">No exercises yet. Add some under Edit routines.</p>') +
-      `<p class="note">Change kg, reps or sets and it is saved as your new default for next time.</p></div>` : '<p class="empty">Create your first routine below.</p>') +
+      `<p class="note">Set the kg and reps for each set. Any change is saved as your default for next time.</p></div>` : '<p class="empty">Create your first routine below.</p>') +
 `<details class="card" ${r ? '' : 'open'}><summary>Edit routines</summary>
 <form id="rf" class="row"><input name="n" placeholder="New routine, e.g. Leg day" required><button class="pri">Create routine</button></form>` +
-(r ? `<h3 style="margin-top:18px">Add to ${esc(r.name)}</h3><form id="ef" class="row"><input name="n" placeholder="Exercise" required><input name="s" type="number" min="1" placeholder="Sets" required><input name="r" type="number" min="1" placeholder="Reps" required><input name="w" type="number" min="0" step="0.5" placeholder="kg"><button class="pri">Add</button></form>` +
+(r ? `<h3 style="margin-top:18px">Add to ${esc(r.name)}</h3><form id="ef" class="row"><input name="n" placeholder="Exercise" required><input name="s" type="number" min="1" max="10" placeholder="Sets" required><input name="r" type="number" min="1" placeholder="Reps" required><input name="w" type="number" min="0" step="0.5" placeholder="kg"><button class="pri">Add</button></form>` +
   ex.map(e => `<div class="li"><div class="g">${esc(e.name)}</div><button class="x" data-act="dele" data-id="${e.id}" aria-label="Remove ${esc(e.name)}">×</button></div>`).join('') +
   `<div class="acts" style="justify-content:flex-start;margin-top:12px"><button class="ghost" data-act="clearday">Reset today's ticks</button><button class="ghost" data-act="delr" style="color:var(--bad)">Delete this routine</button></div>` : '') + '</details>';
   },
@@ -105,9 +107,11 @@ document.addEventListener('click', e => {
   else if (a === 'water') day().water.push(+D.ml);
   else if (a === 'undo') day().water.pop();
   else if (a === 'delm') day().meals = day().meals.filter(m => m.id !== D.id);
-  else if (a === 'set') { const m = S.done[cur] || (S.done[cur] = {}), i = +D.i; m[D.id] = m[D.id] === i ? i - 1 : i; }
+  else if (a === 'set') { const m = S.done[cur] || (S.done[cur] = {}), v = m[D.id] || (m[D.id] = []); v[+D.i] = !v[+D.i]; }
+  else if (a === 'addset') { const x = plan().find(x => x.id === D.id); x.s.push({...x.s[x.s.length - 1]}); }
+  else if (a === 'delset') { const x = plan().find(x => x.id === D.id); if (x.s.length > 1) { x.s.pop(); const v = (S.done[cur] || {})[x.id]; if (v) v.length = Math.min(v.length, x.s.length); } }
   else if (a === 'pick') S.sel[cur] = S.last = D.id;
-  else if (a === 'done') { const x = plan().find(x => x.id === D.id), m = S.done[cur] || (S.done[cur] = {}); m[x.id] = dn(cur, x) >= x.sets ? 0 : x.sets; }
+  else if (a === 'done') { const x = plan().find(x => x.id === D.id), m = S.done[cur] || (S.done[cur] = {}); m[x.id] = x.s.map(() => dn(cur, x) < x.s.length); }
   else if (a === 'dele') rt().ex = plan().filter(x => x.id !== D.id);
   else if (a === 'clearday') S.done[cur] = {};
   else if (a === 'delr') { if (!confirm('Delete the routine "' + rt().name + '"?')) return; S.routines = S.routines.filter(x => x !== rt()); }
@@ -123,7 +127,7 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target)), id = e.target.id, uid = Date.now().toString(36);
   if (id === 'mf') day().meals.push({id:uid, c:f.c, n:f.n.trim(), kcal:+f.k, p:+f.p || 0});
-  if (id === 'ef') rt().ex.push({id:uid, name:f.n.trim(), sets:+f.s, reps:+f.r, kg:+f.w || 0});
+  if (id === 'ef') rt().ex.push({id:uid, name:f.n.trim(), s:[...Array(Math.min(10, +f.s))].map(() => ({kg:+f.w || 0, reps:+f.r}))});
   if (id === 'rf') { const r = mk(f.n.trim(), []); S.routines.push(r); S.sel[cur] = S.last = r.id; toast('Routine created'); }
   if (id === 'gf') { S.goals = {kcal:+f.k || 0, water:+f.w || 0, protein:+f.p || 0}; toast('Goals saved'); }
   save(); render();
@@ -131,10 +135,10 @@ document.addEventListener('submit', e => {
 
 document.addEventListener('change', e => {
   const f = e.target.dataset.f;
-  if (f) { const x = plan().find(x => x.id === e.target.dataset.id); x[f] = Math.max(f === 'kg' ? 0 : 1, +e.target.value || 0); save(); if (f === 'sets') render(); toast('Saved for next session'); return; }
+  if (f) { const x = plan().find(x => x.id === e.target.dataset.id); x.s[+e.target.dataset.i][f] = Math.max(f === 'kg' ? 0 : 1, +e.target.value || 0); save(); toast('Saved for next session'); return; }
   if (e.target.id !== 'imp' || !e.target.files[0]) return;
   const r = new FileReader();
-  r.onload = () => { try { S = Object.assign(fresh(), JSON.parse(r.result)); save(); render(); toast('Backup imported'); } catch(x) { toast('That file is not a valid backup'); } };
+  r.onload = () => { try { S = migrate(Object.assign(fresh(), JSON.parse(r.result))); save(); render(); toast('Backup imported'); } catch(x) { toast('That file is not a valid backup'); } };
   r.readAsText(e.target.files[0]);
 });
 
