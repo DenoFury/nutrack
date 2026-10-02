@@ -25,7 +25,7 @@ const iso = d => new Date(d.getTime() - d.getTimezoneOffset()*6e4).toISOString()
 const dt = s => new Date(s + 'T12:00:00');
 const add = (s, n) => { const d = dt(s); d.setDate(d.getDate() + n); return iso(d); };
 const wd = s => (dt(s).getDay() + 6) % 7;
-let cur = iso(new Date()), view = 'dash', rng = 7, sq = '', results = [], status = '';
+let fx = [], cur = iso(new Date()), view = 'dash', rng = 7, sq = '', results = [], status = '';
 
 const get = d => S.days[d] || {meals:[], water:[]};
 const day = () => S.days[cur] || (S.days[cur] = {meals:[], water:[]});
@@ -55,12 +55,12 @@ function figure(v, max){
     `<text x="100" y="410" text-anchor="middle">${k === 'front' ? 'Front' : 'Back'}</text></g>`;
   return `<svg viewBox="0 0 440 416" class="body" role="img" aria-label="Muscle heat map">${side('front', 0)}${side('back', 230)}</svg>`; }
 
-const ring = (p, c, big, sub) => `<svg viewBox="0 0 100 100" class="ring" role="img" aria-label="${big} ${sub}">
-<circle cx="50" cy="50" r="42"/><circle class="v" cx="50" cy="50" r="42" transform="rotate(-90 50 50)" style="stroke:${c};stroke-dasharray:${Math.min(1,p)*263.9} 263.9"/>
+const ring = (p, c, big, sub, cls = '') => `<svg viewBox="0 0 100 100" class="ring ${p >= 1 ? 'full ' : ''}${cls}" style="--c:${c}" role="img" aria-label="${big} ${sub}">
+<circle cx="50" cy="50" r="42"/>${p >= 1 ? '<defs><filter id="gl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3.5"/></filter></defs><circle class="glow" cx="50" cy="50" r="42"/>' : ''}<circle class="v" cx="50" cy="50" r="42" transform="rotate(-90 50 50)" style="stroke:${c};stroke-dasharray:${Math.min(1,p)*263.9} 263.9"/>
 <text x="50" y="52" text-anchor="middle">${big}</text><text class="s" x="50" y="65" text-anchor="middle">${sub}</text></svg>`;
 function bars(fn, goal, color){
   const ds = [...Array(7)].map((_, i) => add(cur, i - 6)), vs = ds.map(d => fn(d)), max = Math.max(goal, ...vs, 1);
-  return `<div class="plot">${vs.map((v, i) => `<i class="${ds[i]===cur?'on':''}" style="height:${v/max*100}%;background:${color}" title="${v}"></i>`).join('')}<hr style="bottom:${goal/max*100}%"></div>
+  return `<div class="plot">${vs.map((v, i) => `<i class="${ds[i]===cur?'on':''}" style="height:${v/max*100}%;background:${color};--i:${i}" title="${v}"></i>`).join('')}<hr style="bottom:${goal/max*100}%"></div>
 <div class="lbl">${ds.map(d => `<span>${DN[wd(d)][0]}</span>`).join('')}</div>`; }
 const mbar = (l, v, g, c) => `<div class="mb"><span>${l} <b>${Math.round(v)}</b> / ${g} g</span><div class="bar"><i style="width:${Math.min(100, pct(v,g)*100)}%;background:${c}"></i></div></div>`;
 const num = (n, ph, extra = '') => `<input name="${n}" type="number" min="0" step="any" placeholder="${ph}" ${extra}>`;
@@ -71,7 +71,7 @@ const V = {
     return `<div class="grid">
 <div class="card"><h3>Calories</h3>${ring(pct(k,g.kcal), left<0?'var(--bad)':'var(--kcal)', Math.abs(left), left<0?'kcal over':'kcal left')}
 <p class="det">${k} eaten of ${g.kcal}<br>P ${Math.round(tot(cur,'p'))}/${g.protein}, C ${Math.round(tot(cur,'cb'))}/${g.carbs}, F ${Math.round(tot(cur,'f'))}/${g.fat} g</p></div>
-<div class="card"><h3>Water</h3>${ring(pct(w,g.water), 'var(--water)', +(w/1000).toFixed(2), 'of ' + +(g.water/1000).toFixed(2) + ' L')}
+<div class="card"><h3>Water</h3>${ring(pct(w,g.water), 'var(--water)', +(w/1000).toFixed(2), 'of ' + +(g.water/1000).toFixed(2) + ' L', 'wr')}
 <div class="acts"><button data-act="water" data-ml="250">+250 ml</button><button data-act="water" data-ml="500">+500 ml</button><button class="ghost" data-act="undo">Undo</button></div></div>
 <div class="card"><h3>Training${rt() ? ': ' + esc(rt().name) : ''}</h3>${ring(pct(d,t), 'var(--train)', t ? d + '/' + t : 'Rest', t ? 'sets done' : 'no plan')}
 <p class="det">${ex.length ? ex.map(e => esc(e.name)).join(', ') : 'Create a routine in Training.'}</p>
@@ -144,8 +144,33 @@ function render(){
   $('#date').textContent = cur === iso(new Date()) ? 'Today, ' + l : l;
   $('header').hidden = view === 'set';
   document.querySelectorAll('nav [data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === view));
+  const key = view + cur, ch = key !== render.k; render.k = key;
+  $('#view').classList.toggle('in', ch);
   $('#view').innerHTML = V[view]();
+  fx.forEach(([s, c]) => document.querySelectorAll(s).forEach(el => c === 'burst' ? burst(el) : el.classList.add(c)));
+  fx = []; countUp();
 }
+const calm = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches);
+function burst(el){
+  if (calm()) return;
+  const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, cols = ['#ff9500','#34c759','#007aff','#ff375f','#ffd60a','#bf5af2'];
+  for (let i = 0; i < 14; i++) {
+    const p = document.createElement('i'), a = Math.PI * 2 * i / 14 + Math.random() * .5, d = 38 + Math.random() * 52;
+    p.className = 'cf'; p.style.cssText = `left:${cx}px;top:${cy}px;background:${cols[i % 6]};--x:${Math.cos(a) * d}px;--y:${Math.sin(a) * d}px`;
+    document.body.appendChild(p); setTimeout(() => p.remove(), 800);
+  }
+}
+function countUp(){
+  const P = countUp.p || (countUp.p = {}), fresh = $('#view').classList.contains('in');
+  document.querySelectorAll('#view .ring text:not(.s)').forEach((el, i) => {
+    const to = +el.textContent, k = view + i; if (el.textContent.trim() === '' || isNaN(to)) return;
+    const from = fresh ? 0 : (P[k] ?? to); P[k] = to; if (calm() || from === to) return;
+    const t0 = performance.now(), dec = String(to).includes('.') ? 2 : 0;
+    const step = n => { const p = Math.min(1, (n - t0) / 700), e = 1 - Math.pow(1 - p, 3); el.textContent = +(from + (to - from) * e).toFixed(dec); if (p < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+document.addEventListener('pointermove', e => { const c = e.target.closest && e.target.closest('.card'); if (c) { const r = c.getBoundingClientRect(); c.style.setProperty('--mx', e.clientX - r.left + 'px'); c.style.setProperty('--my', e.clientY - r.top + 'px'); } });
 let tt; const toast = m => { const e = $('#toast'); e.textContent = m; e.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => e.classList.remove('show'), 2200); };
 
 async function search(q){
@@ -200,6 +225,15 @@ document.addEventListener('click', e => {
     l.download = 'fittrack-backup-' + iso(new Date()) + '.json'; l.click(); return;
   }
   else if (a === 'reset') { if (!confirm('Delete all your data? This cannot be undone.')) return; S = fresh(); toast('All data deleted'); }
+  if (a === 'set' || a === 'done' || a === 'water' || a === 'hab') {
+    navigator.vibrate && navigator.vibrate(8);
+    const q = `[data-id="${D.id}"]`, full = x && dn(cur, x) >= x.s.length;
+    if (a === 'set' && ((S.done[cur] || {})[D.id] || [])[+D.i]) fx.push([`.chip${q}[data-i="${D.i}"]`, 'pop']);
+    if ((a === 'set' || a === 'done') && full) fx.push([`.dn${q}`, 'burst']);
+    if (a === 'done' && full) fx.push([`.chip${q}`, 'pop']);
+    if (a === 'water') fx.push(['.ring.wr', 'pulse']);
+    if (a === 'hab' && (S.hdone[cur] || []).includes(D.id)) fx.push([`.chk input${q}`, 'pop']);
+  }
   save(); render();
 });
 
