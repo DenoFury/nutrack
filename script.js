@@ -367,3 +367,32 @@ if (sb) {
 }
 
 render();
+
+// ---------- Update check ----------
+// Compares the version tag on the script link in the loaded page with the one in the live index.html. Bump ?v= in index.html on every release.
+const verOf = t => { const m = /script\.js\?v=([\w.-]{1,20})/.exec(t); return m ? m[1] : ''; };
+const myV = verOf((document.querySelector('script[src*="script.js"]') || {}).outerHTML || '');
+let newV = '', skipV = '', checking = false, lastCheck = 0;
+function showUpdate(){
+  if (document.getElementById('upd') || newV === skipV) return;
+  const d = document.createElement('div'); d.id = 'upd'; d.setAttribute('role', 'alert');
+  const s = document.createElement('span'); s.textContent = 'A new version of FitTrack is available.';
+  const r = document.createElement('button'); r.textContent = 'Reload';
+  const l = document.createElement('button'); l.textContent = 'Later'; l.className = 'ghost';
+  r.onclick = () => location.replace(location.pathname + '?u=' + encodeURIComponent(newV));   // new address forces a fresh download
+  l.onclick = () => { skipV = newV; d.remove(); };
+  d.append(s, r, l); document.body.appendChild(d);
+}
+async function checkUpdate(){
+  if (!myV || checking || Date.now() - lastCheck < 20000) return;
+  checking = true; lastCheck = Date.now();
+  try {
+    const r = await fetch(location.pathname + '?cb=' + Date.now(), {cache:'no-store', credentials:'omit'});
+    if (r.ok) { const v = verOf((await r.text()).slice(0, 30000)); if (v && v !== myV) { newV = v; showUpdate(); } }
+  } catch(e) {}
+  checking = false;
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
+addEventListener('pageshow', checkUpdate);
+setInterval(checkUpdate, 30 * 60 * 1000);
+checkUpdate();
