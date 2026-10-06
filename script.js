@@ -340,7 +340,7 @@ async function push(){
 }
 async function passAuth(email, pw){
   authEmail = str(email, 254).trim(); pw = String(pw || '');
-  if (pw.length < 12 || pw.length > 72) { authMsg = 'Use a password of 12 to 72 characters.'; return render(); }
+  if (pw.length < 8 || pw.length > 72) { authMsg = 'Use a password of 8 to 72 characters.'; return render(); }
   if (Date.now() - lastSend < 4000) { authMsg = 'Please wait a few seconds and try again.'; return render(); }
   lastSend = Date.now(); authMsg = 'Please wait…'; render();
   try {
