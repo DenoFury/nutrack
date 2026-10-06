@@ -150,7 +150,7 @@ ${e.s.map((s, i) => { const p = L && L.s[i]; return `<div class="sr"><button cla
 <div class="acts" style="justify-content:flex-start;margin-top:12px"><button class="ghost" data-act="syncnow">Sync now</button><button class="ghost" data-act="signout">Sign out</button></div></div>`
       : `<div class="card"><h3>Account and sync</h3><p class="note" style="margin:0 0 10px">${authStep === 'up' ? 'Create an account to back up your data and use it on all your devices.' : 'Sign in to sync your data across your devices.'}</p>
 <form id="af" class="row"><input name="e" type="email" autocomplete="email" maxlength="254" placeholder="you@email.com" required value="${esc(authEmail)}" style="flex:1 1 100%">
-<input name="pw" type="password" autocomplete="${authStep === 'up' ? 'new-password' : 'current-password'}" minlength="12" maxlength="72" placeholder="Password (12+ characters)" required style="flex:1 1 100%">
+<input name="pw" type="password" autocomplete="${authStep === 'up' ? 'new-password' : 'current-password'}" minlength="8" maxlength="72" placeholder="Password (8+ characters)" required style="flex:1 1 100%">
 <button class="pri">${authStep === 'up' ? 'Create account' : 'Sign in'}</button><button type="button" class="ghost" data-act="authmode">${authStep === 'up' ? 'I already have an account' : 'Create an account'}</button></form>
 ${authMsg ? `<p class="note" role="status">${authMsg}</p>` : ''}</div>`;
     const g = S.goals;
