@@ -11,14 +11,33 @@ const fresh = () => ({ goals:{kcal:2200, water:2500, protein:140, carbs:250, fat
   habits:[{id:uid(), name:'Take creatine'}, {id:uid(), name:'Sleep 7+ hours'}, {id:uid(), name:'10,000 steps'}],
   routines:[mk('Push day', [['Bench press',4,8,[50,60,60,65]],['Overhead press',3,10,35],['Incline dumbbell press',3,10,22],['Triceps pushdown',3,12,25]]),
             mk('Pull day', [['Deadlift',3,5,90],['Lat pulldown',4,10,50],['Seated cable row',3,10,45],['Barbell curl',3,12,25]])] });
-const migrate = o => { const F = fresh(); o.goals = {...F.goals, ...o.goals};
-  ['saved','habits'].forEach(k => o[k] || (o[k] = F[k])); ['sched','log','hdone','done','sel'].forEach(k => o[k] || (o[k] = {}));
-  o.routines.forEach(r => r.ex.forEach(e => { if (!e.s) { e.s = [...Array(e.sets || 3)].map(() => ({kg:e.kg || 0, reps:e.reps || 10})); delete e.sets; delete e.reps; delete e.kg; } if (e.m === undefined) e.m = guess(e.name); }));
-  return o; };
-let S = fresh();
-try { Object.assign(S, JSON.parse(localStorage.getItem(KEY))); } catch(e){}
-migrate(S);
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} };
+const MAXB = 1.5e6, DATE = /^\d{4}-\d{2}-\d{2}$/, IDK = k => /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/.test(k);
+const sidk = s => String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, '').replace(/^_+/, '').slice(0, 40), sid = s => sidk(s) || uid();
+const str = (s, n = 80) => String(s == null ? '' : s).slice(0, n), nn = (v, d = 0) => Number.isFinite(+v) ? +v : d, pos = v => Math.max(0, nn(v));
+const arr = a => Array.isArray(a) ? a : [], obj = o => (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+const dict = (o, keep, f) => Object.fromEntries(Object.entries(obj(o)).filter(([k]) => keep(k)).map(([k, v]) => [k, f(v)]));
+const item = i => { i = obj(i); return {n:str(i.n), kcal:pos(i.kcal), p:pos(i.p), cb:pos(i.cb), f:pos(i.f)}; };
+// Rebuilds the whole data object from known fields only, so imported or cloud data can never inject markup or odd keys.
+function sanitize(raw){
+  const o = obj(raw), F = fresh(), g = obj(o.goals);
+  const legacy = e => { e = obj(e); if (!Array.isArray(e.s)) e.s = [...Array(Math.min(10, nn(e.sets, 3)))].map(() => ({kg:e.kg, reps:e.reps || 10})); return e; };
+  return {
+    goals: Object.fromEntries(Object.entries(F.goals).map(([k, d]) => [k, g[k] === undefined ? d : pos(g[k])])),
+    routines: (o.routines === undefined ? F.routines : arr(o.routines)).slice(0, 50).map(r => { r = obj(r);
+      return {id:sid(r.id), name:str(r.name, 60), ex:arr(r.ex).slice(0, 60).map(e => { e = legacy(e); const nm = str(e.name, 60);
+        return {id:sid(e.id), name:nm, m:e.m === undefined ? guess(nm) : (MUS.includes(e.m) ? e.m : ''), s:e.s.slice(0, 12).map(s => ({kg:pos(obj(s).kg), reps:Math.max(1, nn(obj(s).reps, 1))}))}; })}; }),
+    habits: (o.habits === undefined ? F.habits : arr(o.habits)).slice(0, 50).map(h => ({id:sid(obj(h).id), name:str(obj(h).name, 60)})),
+    saved: arr(o.saved).slice(0, 300).map(x => ({id:sid(obj(x).id), n:str(obj(x).n, 60), items:arr(obj(x).items).slice(0, 40).map(item)})),
+    days: dict(o.days, k => DATE.test(k), v => ({meals:arr(obj(v).meals).slice(0, 300).map(m => ({id:sid(obj(m).id), c:CATS.includes(obj(m).c) ? m.c : 'Snacks', ...item(m)})), water:arr(obj(v).water).slice(0, 200).map(pos)})),
+    done: dict(o.done, k => DATE.test(k), v => dict(v, IDK, a => arr(a).slice(0, 12).map(Boolean))),
+    log: dict(o.log, k => DATE.test(k), v => dict(v, IDK, x => { x = obj(x); return {n:str(x.n, 60), m:MUS.includes(x.m) ? x.m : '', r:str(x.r, 60), s:arr(x.s).slice(0, 12).map(s => ({kg:pos(obj(s).kg), reps:pos(obj(s).reps), d:!!obj(s).d}))}; })),
+    sel: dict(o.sel, k => DATE.test(k), sidk), sched: dict(o.sched, k => /^[0-6]$/.test(k), sidk), last: sidk(o.last),
+    hdone: dict(o.hdone, k => DATE.test(k), a => arr(a).slice(0, 60).map(sidk))
+  };
+}
+let S;
+try { const raw = localStorage.getItem(KEY); S = sanitize(raw && raw.length < MAXB ? JSON.parse(raw) : null); } catch(e) { S = sanitize(null); }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} markDirty(); };
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const iso = d => new Date(d.getTime() - d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
@@ -126,6 +145,12 @@ ${e.s.map((s, i) => { const p = L && L.s[i]; return `<div class="sr"><button cla
   return `<details class="hs"><summary><b>${dt(d).toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'})}</b> ${esc(es[0].r || '')} <span>${Math.round(vol).toLocaleString('en-GB')} kg</span></summary>${es.map(x => `<p class="hl"><strong>${esc(x.n)}</strong> ${x.s.filter(s => s.d).map(s => s.kg + '×' + s.reps).join(', ')}</p>`).join('')}</details>`; }).join('') : '<p class="empty">No workouts logged yet.</p>'}</div>`;
   },
   set(){
+    const acct = () => !sb ? `<div class="card"><h3>Account and sync</h3><p class="empty">Cloud sync is not available in this preview. It works on your GitHub Pages site.</p></div>`
+      : user ? `<div class="card"><h3>Account and sync</h3><p class="empty" style="color:var(--ink)">Signed in as <b>${esc(user.email || '')}</b><br><span class="muted">Status: <span id="syncTxt">${LBL[syncSt] || ''}</span></span></p>
+<div class="acts" style="justify-content:flex-start;margin-top:12px"><button class="ghost" data-act="syncnow">Sync now</button><button class="ghost" data-act="signout">Sign out</button></div></div>`
+      : `<div class="card"><h3>Account and sync</h3><p class="note" style="margin:0 0 10px">Sign in to back up your data and use it on all your devices. No password needed.</p>
+<form id="af" class="row"><input name="e" type="email" autocomplete="email" maxlength="254" placeholder="you@email.com" required value="${esc(authEmail)}"><button class="pri">Email me a link</button></form>
+${authMsg ? `<p class="note">${authMsg}</p>` : ''}${authStep === 'code' ? `<form id="cf" class="row" style="margin-top:10px"><input name="t" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" placeholder="Code from the email" required><button class="pri">Verify</button></form>` : ''}</div>`;
     const g = S.goals;
     return `<h2>Settings</h2><form id="gf" class="card row"><label class="f">Daily calories<input name="k" type="number" min="0" value="${g.kcal}"></label>
 <label class="f">Water (ml)<input name="w" type="number" min="0" value="${g.water}"></label><label class="f">Protein (g)<input name="p" type="number" min="0" value="${g.protein}"></label>
@@ -133,7 +158,7 @@ ${e.s.map((s, i) => { const p = L && L.s[i]; return `<div class="sr"><button cla
 <button class="pri" style="align-self:flex-end">Save goals</button></form>
 <div class="card"><h3>Daily checklist goals</h3>${S.habits.map(h => `<div class="li"><div class="g">${esc(h.name)}</div><button class="x" data-act="delh" data-id="${h.id}" aria-label="Delete">×</button></div>`).join('')}
 <form id="hf" class="row" style="margin-top:10px"><input name="n" placeholder="New goal, e.g. Stretch 10 minutes" style="flex:1 1 200px" required><button class="pri">Add</button></form></div>
-<div class="card"><h3>Your data lives only in this browser. Back it up regularly.</h3><div class="acts" style="justify-content:flex-start">
+${acct()}<div class="card"><h3>Your data lives only in this browser. Back it up regularly.</h3><div class="acts" style="justify-content:flex-start">
 <button class="ghost" data-act="export">Export backup</button><label class="btn">Import backup<input type="file" id="imp" accept=".json" hidden></label>
 <button class="ghost" data-act="reset" style="color:var(--bad)">Delete all data</button></div></div>`;
   }
@@ -148,7 +173,7 @@ function render(){
   $('#view').classList.toggle('in', ch);
   $('#view').innerHTML = V[view]();
   fx.forEach(([s, c]) => document.querySelectorAll(s).forEach(el => c === 'burst' ? burst(el) : el.classList.add(c)));
-  fx = []; countUp();
+  fx = []; countUp(); setSync(syncSt);
 }
 const calm = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches);
 function burst(el){
@@ -220,6 +245,8 @@ document.addEventListener('click', e => {
   else if (a === 'renr') { const v = prompt('Routine name', rt().name); if (v && v.trim()) rt().name = v.trim(); }
   else if (a === 'clearday') { S.done[cur] = {}; delete S.log[cur]; }
   else if (a === 'delr') { if (!confirm('Delete the routine "' + rt().name + '"?')) return; S.routines = S.routines.filter(y => y !== rt()); }
+  else if (a === 'syncnow') { meta.dirty ? push() : pull(); return; }
+  else if (a === 'signout') { sb.auth.signOut().then(() => { meta = {uid:'', at:'', dirty:false}; saveMeta(); }); return; }
   else if (a === 'export') {
     const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob([JSON.stringify(S)], {type:'application/json'}));
     l.download = 'fittrack-backup-' + iso(new Date()) + '.json'; l.click(); return;
@@ -241,6 +268,8 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target)), id = e.target.id;
   if (id === 'sf') { sq = f.q; search(f.q); return; }
+  if (id === 'af') { sendLink(f.e); return; }
+  if (id === 'cf') { verify(f.t); return; }
   if (id === 'mf') putItems([{n:f.n.trim(), kcal:+f.k, p:+f.p || 0, cb:+f.cb || 0, f:+f.f || 0}], f.c);
   if (id === 'ef') rt().ex.push({id:uid(), name:f.n.trim(), m:f.m || guess(f.n), s:[...Array(Math.min(10, +f.s))].map(() => ({kg:+f.w || 0, reps:+f.r}))});
   if (id === 'rf') { const r = mk(f.n.trim(), []); S.routines.push(r); S.sel[cur] = S.last = r.id; toast('Routine created'); }
@@ -256,8 +285,78 @@ document.addEventListener('change', e => {
   if (D.sch !== undefined) { S.sched[D.sch] = t.value; save(); toast('Schedule saved'); render(); return; }
   if (t.id !== 'imp' || !t.files[0]) return;
   const r = new FileReader();
-  r.onload = () => { try { S = migrate(Object.assign(fresh(), JSON.parse(r.result))); save(); render(); toast('Backup imported'); } catch(x) { toast('That file is not a valid backup'); } };
+  r.onload = () => { try { if (r.result.length > MAXB) throw 0; S = sanitize(JSON.parse(r.result)); save(); render(); toast('Backup imported'); } catch(x) { toast('That file is not a valid backup'); } };
   r.readAsText(t.files[0]);
 });
+
+// ---------- Cloud sync (Supabase) ----------
+// The anon key is public by design. Safety comes from row-level security in the database: each account can only touch its own row.
+const SUPA_URL = 'https://xpeunnqqtwdtvwvxybor.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhwZXVubnFxdHdkdHZ3dnh5Ym9yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NDA1NjcsImV4cCI6MjEwNjUxNjU2N30.7bR16sp6uSIxawSXN9ZB1zZEgRvjABvVigR6hC2Y8-M';
+let sb = null;
+try { if (window.supabase) sb = window.supabase.createClient(SUPA_URL, SUPA_KEY, {auth:{flowType:'pkce', persistSession:true, autoRefreshToken:true, detectSessionInUrl:true}}); } catch(e) {}
+let user = null, authStep = 'email', authEmail = '', authMsg = '', lastSend = 0, syncSt = 'off', busy = false, again = false, ver = 0, timer;
+let meta = {uid:'', at:'', dirty:false};
+try { const m = JSON.parse(localStorage.getItem('fittrack-sync')); if (m) meta = {uid:String(m.uid || ''), at:String(m.at || ''), dirty:!!m.dirty}; } catch(e) {}
+const saveMeta = () => { try { localStorage.setItem('fittrack-sync', JSON.stringify(meta)); } catch(e) {} };
+const LBL = {saved:'Synced', saving:'Syncing…', offline:'Offline', error:'Sync error'};
+function setSync(st){ syncSt = st; const b = $('#sync'); if (b) { b.hidden = !user; b.textContent = LBL[st] || ''; b.className = 'sync ' + st; } const t = $('#syncTxt'); if (t) t.textContent = LBL[st] || ''; }
+function markDirty(){ if (!sb) return; ver++; meta.dirty = true; saveMeta(); if (user) { clearTimeout(timer); timer = setTimeout(push, 1500); setSync('saving'); } }
+const hasData = () => Object.keys(S.days).length || Object.keys(S.log).length || S.saved.length;
+function adopt(row){
+  const j = JSON.stringify(row.data); if (j.length > MAXB) throw new Error('size');
+  S = sanitize(JSON.parse(j)); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {}
+  meta = {uid:user.id, at:row.updated_at, dirty:false}; saveMeta(); render(); toast('Synced from the cloud');
+}
+async function pull(){
+  if (!sb || !user) return; if (busy) { again = true; return; } busy = true; setSync('saving'); let next = null;
+  try {
+    const {data:row, error} = await sb.from('app_state').select('data,updated_at').eq('user_id', user.id).maybeSingle();
+    if (error) throw error;
+    const first = meta.uid !== user.id;
+    if (!row) { meta = {uid:user.id, at:'', dirty:true}; saveMeta(); next = push; }
+    else if (first || row.updated_at !== meta.at) {
+      let cloud = true;
+      if (first && hasData()) cloud = confirm('This account already has data in the cloud.\n\nOK = use the cloud data (replaces what is on this device)\nCancel = keep this device and overwrite the cloud');
+      else if (meta.dirty) cloud = confirm('Your data changed here and on another device.\n\nOK = use the other device\'s data\nCancel = keep this device and overwrite the cloud');
+      if (cloud) adopt(row); else { meta = {uid:user.id, at:row.updated_at, dirty:true}; saveMeta(); next = push; }
+    } else if (meta.dirty) next = push;
+    if (!next) setSync('saved');
+  } catch(e) { setSync(navigator.onLine ? 'error' : 'offline'); }
+  busy = false; if (next) return next(); if (again) { again = false; clearTimeout(timer); timer = setTimeout(push, 500); }
+}
+async function push(){
+  if (!sb || !user) return; if (busy) { again = true; return; } busy = true; setSync('saving'); const v0 = ver; let next = null;
+  try {
+    if (JSON.stringify(S).length > MAXB) throw new Error('size');
+    let r;
+    if (meta.at) { r = await sb.from('app_state').update({data:S}).eq('user_id', user.id).eq('updated_at', meta.at).select('updated_at'); if (!r.error && !(r.data || []).length) next = pull; }
+    else { r = await sb.from('app_state').insert({user_id:user.id, data:S}).select('updated_at'); if (r.error && r.error.code === '23505') next = pull; }
+    if (!next) { if (r.error) throw r.error; meta = {uid:user.id, at:r.data[0].updated_at, dirty:ver !== v0}; saveMeta(); setSync(ver === v0 ? 'saved' : 'saving'); if (ver !== v0) again = true; }
+  } catch(e) { setSync(navigator.onLine ? 'error' : 'offline'); }
+  busy = false; if (next) return next(); if (again) { again = false; clearTimeout(timer); timer = setTimeout(push, 800); }
+}
+async function sendLink(email){
+  authEmail = str(email, 254).trim();
+  if (Date.now() - lastSend < 60000) { authMsg = 'Please wait a minute before requesting another email.'; return render(); }
+  lastSend = Date.now(); authMsg = 'Sending…'; render();
+  const {error} = await sb.auth.signInWithOtp({email:authEmail, options:{emailRedirectTo:location.origin + location.pathname}});
+  if (error) authMsg = 'Could not send the email. Check the address and try again in a minute.';
+  else { authMsg = 'Check your email. Open the link in this browser, or type the code below if your email shows one.'; authStep = 'code'; }
+  render();
+}
+async function verify(code){
+  const {error} = await sb.auth.verifyOtp({email:authEmail, token:str(code, 10).trim(), type:'email'});
+  authMsg = error ? 'That code did not work. Request a new email.' : ''; if (!error) authStep = 'email'; render();
+}
+if (sb) {
+  sb.auth.onAuthStateChange((ev, session) => {
+    user = session ? session.user : null;
+    if (ev === 'TOKEN_REFRESHED') return;
+    setTimeout(() => { if (user) pull(); else setSync('off'); render(); }, 0);
+  });
+  addEventListener('online', () => { if (user && meta.dirty) push(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && user && !meta.dirty) pull(); });
+}
 
 render();

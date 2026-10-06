@@ -165,3 +165,9 @@ nav button.on svg{animation:bob .5s cubic-bezier(.3,.7,.4,1.5)}
 .grid .card:hover{transform:translateY(-3px);box-shadow:0 2px 4px rgba(0,0,0,.05),0 18px 40px rgba(0,0,0,.09)}
 button:hover{filter:brightness(1.07)}
 .li:hover{background:linear-gradient(90deg,transparent,var(--fill) 20%,var(--fill) 80%,transparent)}}
+.hr{display:flex;align-items:center;gap:12px}
+.sync{font-size:.78rem;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:6px}
+.sync::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--train)}
+.sync.saving::before{background:var(--kcal);animation:pulse 1s infinite}
+.sync.offline::before,.sync.error::before{background:var(--bad)}
+.muted{color:var(--muted)}
