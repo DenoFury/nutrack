@@ -170,6 +170,8 @@ ${acct()}${safeCard()}<div class="card"><h3>Your data lives only in this browser
   }
 };
 
+const openD = {};
+document.addEventListener('toggle', e => { const d = e.target; if (!d || d.tagName !== 'DETAILS') return; const i = [...document.querySelectorAll('#view details')].indexOf(d); if (i >= 0) openD[view + i] = d.open; }, true);
 function render(){
   const l = dt(cur).toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'});
   $('#date').textContent = cur === iso(new Date()) ? 'Today, ' + l : l;
@@ -178,6 +180,7 @@ function render(){
   const key = view + cur, ch = key !== render.k; render.k = key;
   $('#view').classList.toggle('in', ch);
   $('#view').innerHTML = V[view]();
+  document.querySelectorAll('#view details').forEach((d, i) => { const k = view + i; if (k in openD) d.open = openD[k]; });   // keep the sections you had open
   fx.forEach(([s, c]) => document.querySelectorAll(s).forEach(el => c === 'burst' ? burst(el) : el.classList.add(c)));
   fx = []; countUp(); setSync(syncSt);
 }
