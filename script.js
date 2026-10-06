@@ -37,7 +37,10 @@ function sanitize(raw){
 }
 let S;
 try { const raw = localStorage.getItem(KEY); S = sanitize(raw && raw.length < MAXB ? JSON.parse(raw) : null); } catch(e) { S = sanitize(null); }
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} markDirty(); };
+let lastSaved = JSON.stringify(S);
+const store = () => { lastSaved = JSON.stringify(S); try { localStorage.setItem(KEY, lastSaved); } catch(e){} };
+// Only a real change to your data counts as an edit. Switching tabs or days saves nothing and syncs nothing.
+const save = () => { const j = JSON.stringify(S); if (j === lastSaved) return; try { localStorage.setItem(KEY, j); } catch(e){} lastSaved = j; markDirty(); };
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const iso = d => new Date(d.getTime() - d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
@@ -145,6 +148,7 @@ ${e.s.map((s, i) => { const p = L && L.s[i]; return `<div class="sr"><button cla
   return `<details class="hs"><summary><b>${dt(d).toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'})}</b> ${esc(es[0].r || '')} <span>${Math.round(vol).toLocaleString('en-GB')} kg</span></summary>${es.map(x => `<p class="hl"><strong>${esc(x.n)}</strong> ${x.s.filter(s => s.d).map(s => s.kg + '×' + s.reps).join(', ')}</p>`).join('')}</details>`; }).join('') : '<p class="empty">No workouts logged yet.</p>'}</div>`;
   },
   set(){
+    const safeCard = () => { const L = copies(); return L.length ? `<div class="card"><h3>Safety copies</h3><p class="note" style="margin:0 0 6px">Before sync replaces or combines anything, a copy of this device's data is kept here. Restoring adds the copy back and keeps your current data.</p>${L.map((c, i) => `<div class="li"><div class="g">${new Date(c.t).toLocaleString('en-GB', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}<small>${esc(String(c.why || '').slice(0, 60))}</small></div><button class="ghost" data-act="restore" data-i="${i}">Restore</button></div>`).join('')}</div>` : ''; };
     const acct = () => !sb ? `<div class="card"><h3>Account and sync</h3><p class="empty">Cloud sync is not available in this preview. It works on your GitHub Pages site.</p></div>`
       : user ? `<div class="card"><h3>Account and sync</h3><p class="empty" style="color:var(--ink)">Signed in as <b>${esc(user.email || '')}</b><br><span class="muted">Status: <span id="syncTxt">${LBL[syncSt] || ''}</span></span></p>
 <div class="acts" style="justify-content:flex-start;margin-top:12px"><button class="ghost" data-act="syncnow">Sync now</button><button class="ghost" data-act="signout">Sign out</button></div></div>`
@@ -160,7 +164,7 @@ ${authMsg ? `<p class="note" role="status">${authMsg}</p>` : ''}</div>`;
 <button class="pri" style="align-self:flex-end">Save goals</button></form>
 <div class="card"><h3>Daily checklist goals</h3>${S.habits.map(h => `<div class="li"><div class="g">${esc(h.name)}</div><button class="x" data-act="delh" data-id="${h.id}" aria-label="Delete">×</button></div>`).join('')}
 <form id="hf" class="row" style="margin-top:10px"><input name="n" placeholder="New goal, e.g. Stretch 10 minutes" style="flex:1 1 200px" required><button class="pri">Add</button></form></div>
-${acct()}<div class="card"><h3>Your data lives only in this browser. Back it up regularly.</h3><div class="acts" style="justify-content:flex-start">
+${acct()}${safeCard()}<div class="card"><h3>Your data lives only in this browser. Back it up regularly.</h3><div class="acts" style="justify-content:flex-start">
 <button class="ghost" data-act="export">Export backup</button><label class="btn">Import backup<input type="file" id="imp" accept=".json" hidden></label>
 <button class="ghost" data-act="reset" style="color:var(--bad)">Delete all data</button></div></div>`;
   }
@@ -248,6 +252,7 @@ document.addEventListener('click', e => {
   else if (a === 'clearday') { S.done[cur] = {}; delete S.log[cur]; }
   else if (a === 'delr') { if (!confirm('Delete the routine "' + rt().name + '"?')) return; S.routines = S.routines.filter(y => y !== rt()); }
   else if (a === 'syncnow') { meta.dirty ? push() : pull(); return; }
+  else if (a === 'restore') { const c = copies()[+D.i]; if (c) { snap('Before restoring a copy'); S = mergeData(S, c.data); store(); markDirty(); toast('Copy added back'); } }
   else if (a === 'authmode') { authStep = authStep === 'up' ? 'in' : 'up'; authMsg = ''; }
   else if (a === 'signout') { sb.auth.signOut().then(() => { meta = {uid:'', at:'', dirty:false}; saveMeta(); }); return; }
   else if (a === 'export') {
@@ -304,10 +309,36 @@ const saveMeta = () => { try { localStorage.setItem('fittrack-sync', JSON.string
 const LBL = {saved:'Synced', saving:'Syncing…', offline:'Offline', error:'Sync error'};
 function setSync(st){ syncSt = st; const b = $('#sync'); if (b) { b.hidden = !user; b.textContent = LBL[st] || ''; b.className = 'sync ' + st; } const t = $('#syncTxt'); if (t) t.textContent = LBL[st] || ''; }
 function markDirty(){ if (!sb) return; ver++; meta.dirty = true; saveMeta(); if (user) { clearTimeout(timer); timer = setTimeout(push, 1500); setSync('saving'); } }
-const hasData = () => Object.keys(S.days).length || Object.keys(S.log).length || S.saved.length;
+const PREV = 'fittrack-prev';
+const copies = () => { try { const x = JSON.parse(localStorage.getItem(PREV)); return Array.isArray(x) ? x.slice(0, 3).filter(c => c && c.data && Number.isFinite(+c.t)) : []; } catch(e) { return []; } };
+function snap(why){ try { const L = copies(); if (L[0] && JSON.stringify(L[0].data) === JSON.stringify(S)) return; L.unshift({t:Date.now(), why, data:S}); localStorage.setItem(PREV, JSON.stringify(L.slice(0, 3))); } catch(e) {} }
+const noId = (k, v) => k === 'id' ? undefined : v;
+const pristine = () => JSON.stringify(S, noId) === JSON.stringify(sanitize(null), noId);
+// Combines two copies of the data. Nothing from either side is dropped; on a clash for the same item, `a` (this device) wins.
+function mergeData(a, b){
+  const A = sanitize(a), B = sanitize(b), rm = {}, mp = k => rm[k] || k;
+  const dup = (L, r) => L.find(o => o.name.toLowerCase() === r.name.toLowerCase() && o.ex.length === r.ex.length && o.ex.every((e, i) => e.name === r.ex[i].name));
+  B.routines.forEach(r => { const o = A.routines.find(x => x.id === r.id) || dup(A.routines, r);
+    if (!o) { A.routines.push(r); return; }
+    if (o.id === r.id) r.ex.forEach(e => { if (!o.ex.some(x => x.id === e.id)) o.ex.push(e); });
+    else { rm[r.id] = o.id; r.ex.forEach((e, i) => { rm[e.id] = o.ex[i].id; }); } });
+  B.habits.forEach(h => { const o = A.habits.find(x => x.id === h.id || x.name.toLowerCase() === h.name.toLowerCase()); if (!o) A.habits.push(h); else if (o.id !== h.id) rm[h.id] = o.id; });
+  B.saved.forEach(s => { if (!A.saved.some(x => x.id === s.id || x.n.toLowerCase() === s.n.toLowerCase())) A.saved.push(s); });
+  Object.entries(B.days).forEach(([d, v]) => { const o = A.days[d]; if (!o) { A.days[d] = v; return; }
+    v.meals.forEach(m => { if (!o.meals.some(x => x.id === m.id)) o.meals.push(m); });
+    if (sum(v.water, x => x) > sum(o.water, x => x)) o.water = v.water; });
+  const nest = (x, y) => Object.entries(y).forEach(([d, m]) => { x[d] = x[d] || {}; Object.entries(m).forEach(([k, v]) => { if (!(mp(k) in x[d])) x[d][mp(k)] = v; }); });
+  nest(A.done, B.done); nest(A.log, B.log);
+  Object.entries(B.hdone).forEach(([d, h]) => { A.hdone[d] = [...new Set([...(A.hdone[d] || []), ...h.map(mp)])]; });
+  Object.entries(B.sel).forEach(([d, v]) => { if (!(d in A.sel)) A.sel[d] = mp(v); });
+  Object.entries(B.sched).forEach(([d, v]) => { if (!(d in A.sched)) A.sched[d] = mp(v); });
+  if (!A.last) A.last = mp(B.last);
+  return sanitize(A);
+}
 function adopt(row){
   const j = JSON.stringify(row.data); if (j.length > MAXB) throw new Error('size');
-  S = sanitize(JSON.parse(j)); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {}
+  snap('Before loading your cloud data');
+  S = sanitize(JSON.parse(j)); store();
   meta = {uid:user.id, at:row.updated_at, dirty:false}; saveMeta(); render(); toast('Synced from the cloud');
 }
 async function pull(){
@@ -318,10 +349,12 @@ async function pull(){
     const first = meta.uid !== user.id;
     if (!row) { meta = {uid:user.id, at:'', dirty:true}; saveMeta(); next = push; }
     else if (first || row.updated_at !== meta.at) {
-      let cloud = true;
-      if (first && hasData()) cloud = confirm('This account already has data in the cloud.\n\nOK = use the cloud data (replaces what is on this device)\nCancel = keep this device and overwrite the cloud');
-      else if (meta.dirty) cloud = confirm('Your data changed here and on another device.\n\nOK = use the other device\'s data\nCancel = keep this device and overwrite the cloud');
-      if (cloud) adopt(row); else { meta = {uid:user.id, at:row.updated_at, dirty:true}; saveMeta(); next = push; }
+      if (JSON.stringify(row.data).length > MAXB) throw new Error('size');
+      if (first && pristine()) adopt(row);            // brand-new device: just load the account's data
+      else if (first || meta.dirty) {                  // both sides have data: combine them, drop nothing
+        snap('Before combining with your account'); S = mergeData(S, row.data); store();
+        meta = {uid:user.id, at:row.updated_at, dirty:true}; saveMeta(); render(); toast('Your data was combined'); next = push;
+      } else adopt(row);                               // someone else changed it and you changed nothing: load it
     } else if (meta.dirty) next = push;
     if (!next) setSync('saved');
   } catch(e) { setSync(navigator.onLine ? 'error' : 'offline'); }
