@@ -148,9 +148,11 @@ ${e.s.map((s, i) => { const p = L && L.s[i]; return `<div class="sr"><button cla
     const acct = () => !sb ? `<div class="card"><h3>Account and sync</h3><p class="empty">Cloud sync is not available in this preview. It works on your GitHub Pages site.</p></div>`
       : user ? `<div class="card"><h3>Account and sync</h3><p class="empty" style="color:var(--ink)">Signed in as <b>${esc(user.email || '')}</b><br><span class="muted">Status: <span id="syncTxt">${LBL[syncSt] || ''}</span></span></p>
 <div class="acts" style="justify-content:flex-start;margin-top:12px"><button class="ghost" data-act="syncnow">Sync now</button><button class="ghost" data-act="signout">Sign out</button></div></div>`
-      : `<div class="card"><h3>Account and sync</h3><p class="note" style="margin:0 0 10px">Sign in to back up your data and use it on all your devices. No password needed.</p>
-<form id="af" class="row"><input name="e" type="email" autocomplete="email" maxlength="254" placeholder="you@email.com" required value="${esc(authEmail)}"><button class="pri">Email me a link</button></form>
-${authMsg ? `<p class="note">${authMsg}</p>` : ''}${authStep === 'code' ? `<form id="cf" class="row" style="margin-top:10px"><input name="t" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" placeholder="Code from the email" required><button class="pri">Verify</button></form>` : ''}</div>`;
+      : `<div class="card"><h3>Account and sync</h3><p class="note" style="margin:0 0 10px">${authStep === 'up' ? 'Create an account to back up your data and use it on all your devices.' : 'Sign in to sync your data across your devices.'}</p>
+<form id="af" class="row"><input name="e" type="email" autocomplete="email" maxlength="254" placeholder="you@email.com" required value="${esc(authEmail)}" style="flex:1 1 100%">
+<input name="pw" type="password" autocomplete="${authStep === 'up' ? 'new-password' : 'current-password'}" minlength="12" maxlength="72" placeholder="Password (12+ characters)" required style="flex:1 1 100%">
+<button class="pri">${authStep === 'up' ? 'Create account' : 'Sign in'}</button><button type="button" class="ghost" data-act="authmode">${authStep === 'up' ? 'I already have an account' : 'Create an account'}</button></form>
+${authMsg ? `<p class="note" role="status">${authMsg}</p>` : ''}</div>`;
     const g = S.goals;
     return `<h2>Settings</h2><form id="gf" class="card row"><label class="f">Daily calories<input name="k" type="number" min="0" value="${g.kcal}"></label>
 <label class="f">Water (ml)<input name="w" type="number" min="0" value="${g.water}"></label><label class="f">Protein (g)<input name="p" type="number" min="0" value="${g.protein}"></label>
@@ -246,6 +248,7 @@ document.addEventListener('click', e => {
   else if (a === 'clearday') { S.done[cur] = {}; delete S.log[cur]; }
   else if (a === 'delr') { if (!confirm('Delete the routine "' + rt().name + '"?')) return; S.routines = S.routines.filter(y => y !== rt()); }
   else if (a === 'syncnow') { meta.dirty ? push() : pull(); return; }
+  else if (a === 'authmode') { authStep = authStep === 'up' ? 'in' : 'up'; authMsg = ''; }
   else if (a === 'signout') { sb.auth.signOut().then(() => { meta = {uid:'', at:'', dirty:false}; saveMeta(); }); return; }
   else if (a === 'export') {
     const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob([JSON.stringify(S)], {type:'application/json'}));
@@ -268,8 +271,7 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target)), id = e.target.id;
   if (id === 'sf') { sq = f.q; search(f.q); return; }
-  if (id === 'af') { sendLink(f.e); return; }
-  if (id === 'cf') { verify(f.t); return; }
+  if (id === 'af') { passAuth(f.e, f.pw); return; }
   if (id === 'mf') putItems([{n:f.n.trim(), kcal:+f.k, p:+f.p || 0, cb:+f.cb || 0, f:+f.f || 0}], f.c);
   if (id === 'ef') rt().ex.push({id:uid(), name:f.n.trim(), m:f.m || guess(f.n), s:[...Array(Math.min(10, +f.s))].map(() => ({kg:+f.w || 0, reps:+f.r}))});
   if (id === 'rf') { const r = mk(f.n.trim(), []); S.routines.push(r); S.sel[cur] = S.last = r.id; toast('Routine created'); }
@@ -295,7 +297,7 @@ const SUPA_URL = 'https://xpeunnqqtwdtvwvxybor.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhwZXVubnFxdHdkdHZ3dnh5Ym9yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NDA1NjcsImV4cCI6MjEwNjUxNjU2N30.7bR16sp6uSIxawSXN9ZB1zZEgRvjABvVigR6hC2Y8-M';
 let sb = null;
 try { if (window.supabase) sb = window.supabase.createClient(SUPA_URL, SUPA_KEY, {auth:{flowType:'pkce', persistSession:true, autoRefreshToken:true, detectSessionInUrl:true}}); } catch(e) {}
-let user = null, authStep = 'email', authEmail = '', authMsg = '', lastSend = 0, syncSt = 'off', busy = false, again = false, ver = 0, timer;
+let user = null, authStep = 'in', authEmail = '', authMsg = '', lastSend = 0, syncSt = 'off', busy = false, again = false, ver = 0, timer;
 let meta = {uid:'', at:'', dirty:false};
 try { const m = JSON.parse(localStorage.getItem('fittrack-sync')); if (m) meta = {uid:String(m.uid || ''), at:String(m.at || ''), dirty:!!m.dirty}; } catch(e) {}
 const saveMeta = () => { try { localStorage.setItem('fittrack-sync', JSON.stringify(meta)); } catch(e) {} };
@@ -336,18 +338,23 @@ async function push(){
   } catch(e) { setSync(navigator.onLine ? 'error' : 'offline'); }
   busy = false; if (next) return next(); if (again) { again = false; clearTimeout(timer); timer = setTimeout(push, 800); }
 }
-async function sendLink(email){
-  authEmail = str(email, 254).trim();
-  if (Date.now() - lastSend < 60000) { authMsg = 'Please wait a minute before requesting another email.'; return render(); }
-  lastSend = Date.now(); authMsg = 'Sending…'; render();
-  const {error} = await sb.auth.signInWithOtp({email:authEmail, options:{emailRedirectTo:location.origin + location.pathname}});
-  if (error) authMsg = 'Could not send the email. Check the address and try again in a minute.';
-  else { authMsg = 'Check your email. Open the link in this browser, or type the code below if your email shows one.'; authStep = 'code'; }
-  render();
-}
-async function verify(code){
-  const {error} = await sb.auth.verifyOtp({email:authEmail, token:str(code, 10).trim(), type:'email'});
-  authMsg = error ? 'That code did not work. Request a new email.' : ''; if (!error) authStep = 'email'; render();
+async function passAuth(email, pw){
+  authEmail = str(email, 254).trim(); pw = String(pw || '');
+  if (pw.length < 12 || pw.length > 72) { authMsg = 'Use a password of 12 to 72 characters.'; return render(); }
+  if (Date.now() - lastSend < 4000) { authMsg = 'Please wait a few seconds and try again.'; return render(); }
+  lastSend = Date.now(); authMsg = 'Please wait…'; render();
+  try {
+    if (authStep === 'up') {
+      const {data, error} = await sb.auth.signUp({email:authEmail, password:pw});
+      if (error) authMsg = /weak|short|least/i.test(error.message) ? 'That password is too weak. Use a longer, unique one.' : 'Could not create the account. Check the details, or try signing in.';
+      else if (!data.session) authMsg = 'Account created. If you do not get signed in, check your email to confirm it, then sign in.';
+      else authMsg = '';
+    } else {
+      const {error} = await sb.auth.signInWithPassword({email:authEmail, password:pw});
+      authMsg = error ? 'Email or password is incorrect.' : '';
+    }
+  } catch(e) { authMsg = navigator.onLine ? 'Something went wrong. Try again.' : 'You are offline.'; }
+  pw = ''; render();
 }
 if (sb) {
   sb.auth.onAuthStateChange((ev, session) => {
