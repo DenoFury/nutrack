@@ -134,8 +134,8 @@ ${e.s.map((s, i) => { const p = L && L.s[i]; return `<div class="sr"><button cla
 <h3 style="margin-top:18px">Weekly schedule (opens the right routine automatically)</h3><div class="sched">${DN.map((n, i) => `<label class="f">${n}<select data-sch="${i}"><option value="">None</option>${R.map(x => `<option value="${x.id}" ${S.sched[i] === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`).join('')}</div>` +
 (r ? `<h3 style="margin-top:18px">${esc(r.name)}</h3><form id="ef" class="row"><input name="n" placeholder="New exercise" required><input name="s" type="number" min="1" max="10" placeholder="Sets" required><input name="r" type="number" min="1" placeholder="Reps" required><input name="w" type="number" min="0" step="0.5" placeholder="kg">
 <select name="m" aria-label="Muscle"><option value="">Muscle: auto</option>${MUS.map(m => `<option>${m}</option>`).join('')}</select><button class="pri">Add</button></form>` +
-  ex.map(e => `<div class="li"><div class="g">${esc(e.name)}<small><select class="ms" data-mu="${e.id}" aria-label="Muscle"><option value="">No muscle</option>${MUS.map(m => `<option ${e.m === m ? 'selected' : ''}>${m}</option>`).join('')}</select></small></div>
-<button class="x" data-act="up" data-id="${e.id}" aria-label="Move up">▲</button><button class="x" data-act="down" data-id="${e.id}" aria-label="Move down">▼</button><button class="x" data-act="ren" data-id="${e.id}" aria-label="Rename">✎</button><button class="x" data-act="dele" data-id="${e.id}" aria-label="Remove ${esc(e.name)}">×</button></div>`).join('') +
+  ex.map(e => `<div class="li" data-ex="${e.id}"><button class="grip" data-grip="${e.id}" aria-label="Drag to reorder ${esc(e.name)}. Arrow keys also work."><svg viewBox="0 0 14 22" width="14" height="22" aria-hidden="true"><g fill="currentColor"><circle cx="3.5" cy="4" r="1.7"/><circle cx="10.5" cy="4" r="1.7"/><circle cx="3.5" cy="11" r="1.7"/><circle cx="10.5" cy="11" r="1.7"/><circle cx="3.5" cy="18" r="1.7"/><circle cx="10.5" cy="18" r="1.7"/></g></svg></button><div class="g">${esc(e.name)}<small><select class="ms" data-mu="${e.id}" aria-label="Muscle"><option value="">No muscle</option>${MUS.map(m => `<option ${e.m === m ? 'selected' : ''}>${m}</option>`).join('')}</select></small></div>
+<button class="x" data-act="ren" data-id="${e.id}" aria-label="Rename">✎</button><button class="x" data-act="dele" data-id="${e.id}" aria-label="Remove ${esc(e.name)}">×</button></div>`).join('') +
   `<div class="acts" style="justify-content:flex-start;margin-top:12px"><button class="ghost" data-act="renr">Rename routine</button><button class="ghost" data-act="clearday">Reset today's ticks</button><button class="ghost" data-act="delr" style="color:var(--bad)">Delete routine</button></div>` : '') + '</details>';
   },
   prog(){
@@ -172,7 +172,45 @@ ${acct()}${safeCard()}<div class="card"><h3>Your data lives only in this browser
 
 const openD = {};
 document.addEventListener('toggle', e => { const d = e.target; if (!d || d.tagName !== 'DETAILS') return; const i = [...document.querySelectorAll('#view details')].indexOf(d); if (i >= 0) openD[view + i] = d.open; }, true);
+let drag = null;
+function dragUpdate(){
+  const d = drag, dy = (d.cy + scrollY) - d.py0;
+  d.row.style.transform = `translateY(${dy}px)`;
+  const c = d.tops[d.i] + d.h / 2 + dy; let to = d.i;
+  d.tops.forEach((t, k) => { const m = t + d.hs[k] / 2; if (k < d.i && c < m) to = Math.min(to, k); if (k > d.i && c > m) to = Math.max(to, k); });
+  d.to = to;
+  d.rows.forEach((r, k) => { if (k !== d.i) r.style.transform = (d.i < to && k > d.i && k <= to) ? `translateY(${-d.h}px)` : (d.i > to && k < d.i && k >= to) ? `translateY(${d.h}px)` : ''; });
+}
+function dragLoop(){   // scrolls the page while you hold a row near the top or bottom edge
+  if (!drag) return; const y = drag.cy;
+  if (y < 90) scrollBy(0, -(90 - y) / 4); else if (y > innerHeight - 90) scrollBy(0, (y - (innerHeight - 90)) / 4);
+  dragUpdate(); drag.raf = requestAnimationFrame(dragLoop);
+}
+function moveEx(id, to){ const L = rt().ex, i = L.findIndex(x => x.id === id); if (i < 0 || to < 0 || to >= L.length || i === to) return false; const [m] = L.splice(i, 1); L.splice(to, 0, m); save(); return true; }
+function dragEnd(e, cancel){
+  if (!drag || (e && e.pointerId !== drag.pid)) return;
+  const d = drag; cancelAnimationFrame(d.raf); drag = null; d.row.classList.remove('drag');
+  if (!cancel && d.to !== d.i) moveEx(d.id, rt().ex.findIndex(x => x.id === d.rows[d.to].dataset.ex));
+  render();
+}
+document.addEventListener('pointerdown', e => {
+  const g = e.target.closest && e.target.closest('.grip'); if (!g || drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  e.preventDefault();
+  const row = g.closest('.li'), rows = [...row.parentElement.querySelectorAll(':scope > .li[data-ex]')], rects = rows.map(r => r.getBoundingClientRect()), i = rows.indexOf(row);
+  drag = {row, rows, i, to:i, id:g.dataset.grip, pid:e.pointerId, cy:e.clientY, py0:e.clientY + scrollY, tops:rects.map(r => r.top + scrollY), hs:rects.map(r => r.height), h:rects[i].height};
+  try { g.setPointerCapture(e.pointerId); } catch(x) {}
+  row.classList.add('drag'); drag.raf = requestAnimationFrame(dragLoop);
+});
+document.addEventListener('pointermove', e => { if (drag && e.pointerId === drag.pid) { drag.cy = e.clientY; dragUpdate(); } });
+document.addEventListener('pointerup', e => dragEnd(e, false));
+document.addEventListener('pointercancel', e => dragEnd(e, true));
+document.addEventListener('keydown', e => {   // keyboard: focus the handle, then press Arrow Up or Down
+  const g = e.target.closest && e.target.closest('.grip'); if (!g || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+  e.preventDefault(); const L = rt().ex, i = L.findIndex(x => x.id === g.dataset.grip);
+  if (moveEx(g.dataset.grip, i + (e.key === 'ArrowUp' ? -1 : 1))) { render(); const n = document.querySelector(`.grip[data-grip="${g.dataset.grip}"]`); if (n) n.focus(); }
+});
 function render(){
+  if (drag) return;
   const l = dt(cur).toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'});
   $('#date').textContent = cur === iso(new Date()) ? 'Today, ' + l : l;
   $('header').hidden = view === 'set';
@@ -249,7 +287,6 @@ document.addEventListener('click', e => {
   else if (a === 'pick') S.sel[cur] = S.last = D.id;
   else if (a === 'done') { const m = S.done[cur] || (S.done[cur] = {}); m[x.id] = x.s.map(() => dn(cur, x) < x.s.length); logEx(x); }
   else if (a === 'dele') rt().ex = plan().filter(y => y.id !== D.id);
-  else if (a === 'up' || a === 'down') { const L = rt().ex, i = L.findIndex(y => y.id === D.id), k = i + (a === 'up' ? -1 : 1); if (L[k]) [L[i], L[k]] = [L[k], L[i]]; }
   else if (a === 'ren') { const v = prompt('Exercise name', x.name); if (v && v.trim()) x.name = v.trim(); }
   else if (a === 'renr') { const v = prompt('Routine name', rt().name); if (v && v.trim()) rt().name = v.trim(); }
   else if (a === 'clearday') { S.done[cur] = {}; delete S.log[cur]; }

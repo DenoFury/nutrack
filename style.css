@@ -178,3 +178,9 @@ box-shadow:0 10px 36px rgba(0,0,0,.18),0 0 0 .5px rgba(128,128,128,.3);animation
 #upd span{flex:1;font-size:.9rem;font-weight:600;line-height:1.25}
 #upd button{padding:8px 16px;flex:none}
 @keyframes drop{from{opacity:0;transform:translate(-50%,-16px)}}
+
+.li[data-ex]{transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.grip{background:none;color:var(--muted);padding:10px 6px;margin-left:-6px;border-radius:10px;touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;line-height:0}
+.grip:active{cursor:grabbing}
+.li.drag{position:relative;z-index:6;transition:none;background:var(--card);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.22),0 0 0 .5px rgba(128,128,128,.3);cursor:grabbing}
+body:has(.li.drag){-webkit-user-select:none;user-select:none}
