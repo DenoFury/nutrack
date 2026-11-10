@@ -299,3 +299,28 @@ body.rest-on #toast{bottom:calc(176px + env(safe-area-inset-bottom))}
 .li small.alts{margin-top:4px}
 .alts span{display:inline-flex;align-items:center;background:var(--fill);color:var(--ink);border-radius:999px;padding:1px 0 1px 10px;margin:4px 6px 0 0}
 .alts .x{font-size:.95rem;padding:0 8px}
+/* next-weight hint, warm-ups, RPE, plates */
+.hint{display:flex;align-items:center;gap:10px;margin-top:10px;padding:9px 12px;border-radius:12px;background:color-mix(in srgb,var(--train) 14%,transparent);font-size:.86rem}
+.hint span{flex:1}.hint .sm{margin:0}
+.wu{margin:10px 0 0;font-size:.82rem;color:var(--muted)}.wu b{color:var(--ink);margin-right:6px}
+.rpe{flex-basis:calc(100% - 54px);display:flex;align-items:center;gap:5px;margin:-2px 0 0 54px;min-width:0}
+.sr.drop .rpe{margin-left:48px;flex-basis:calc(100% - 48px)}
+.rpe span{font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.04em;margin-right:2px}
+.rpe button{background:var(--fill);color:var(--muted);flex:1 1 0;max-width:40px;min-width:0;height:30px;padding:0;border-radius:9px;font-size:.82rem;font-weight:700}
+.rpe button.on{background:var(--acc);color:#fff}
+.sr small.plates{color:var(--acc);font-weight:600}
+/* supersets */
+.ex.inss{border-left:3px solid var(--acc);padding-left:12px;margin-left:-2px}
+.ex.inss:not(.ssf){border-top:0;padding-top:6px}
+.ex.inss:not(.ssl){padding-bottom:6px}
+.sstag{display:block;color:var(--acc);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.li small.sslink{color:var(--acc);margin-top:4px}
+.x.ssb{filter:grayscale(1);opacity:.5}.x.ssb.on{filter:none;opacity:1}
+/* session notes, deload, streaks */
+.sesn{margin-top:16px}
+.sesn textarea{font:inherit;color:var(--ink);background:var(--fill);border:0;border-radius:12px;padding:11px 14px;resize:vertical;min-height:58px;font-size:.95rem;font-weight:500}
+.sesn textarea:focus{outline:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 35%,transparent)}
+.card.dl{border:1px solid color-mix(in srgb,var(--water) 50%,transparent)}
+.stks{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
+.stk{display:flex;flex-direction:column;gap:2px}.stk b{font-size:1.8rem;font-weight:800;line-height:1.1}.stk small{color:var(--muted);font-size:.76rem;line-height:1.25}
+.hl.hn{color:var(--muted);font-style:italic}
