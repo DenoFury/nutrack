@@ -289,3 +289,13 @@ body.rest-on #toast{bottom:calc(176px + env(safe-area-inset-bottom))}
 .lgd i{display:inline-block;vertical-align:middle;margin-right:6px}
 .lgd .d{width:8px;height:8px;border-radius:50%;background:var(--muted)}
 .lgd .l{width:16px;height:3px;border-radius:2px;background:var(--acc)}
+/* drop sets and exercise alternatives */
+.sr.drop{margin-left:20px;padding-left:12px;border-left:2px solid var(--train);margin-top:8px}
+.sr.drop .chip{width:38px;height:38px;font-size:1rem}
+.sr .dropb{flex:none;padding:10px 11px;font-size:.8rem;white-space:nowrap}
+.sr .dx{flex:none;align-self:center}
+.seg.alt{margin-top:10px;flex-wrap:wrap}
+.seg.alt button{flex:1 1 auto;min-width:0}
+.li small.alts{margin-top:4px}
+.alts span{display:inline-flex;align-items:center;background:var(--fill);color:var(--ink);border-radius:999px;padding:1px 0 1px 10px;margin:4px 6px 0 0}
+.alts .x{font-size:.95rem;padding:0 8px}

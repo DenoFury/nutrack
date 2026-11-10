@@ -11,7 +11,7 @@ const fresh = () => ({ goals:{kcal:2200, water:2500, protein:140, carbs:250, fat
   habits:[{id:uid(), name:'Take creatine'}, {id:uid(), name:'Sleep 7+ hours'}, {id:uid(), name:'10,000 steps'}],
   routines:[mk('Push day', [['Bench press',4,8,[50,60,60,65]],['Overhead press',3,10,35],['Incline dumbbell press',3,10,22],['Triceps pushdown',3,12,25]]),
             mk('Pull day', [['Deadlift',3,5,90],['Lat pulldown',4,10,50],['Seated cable row',3,10,45],['Barbell curl',3,12,25]])] });
-const MAXB = 1.5e6, DATE = /^\d{4}-\d{2}-\d{2}$/, IDK = k => /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/.test(k);
+const MAXB = 1.5e6, MAXS = 24, MAXA = 6, DATE = /^\d{4}-\d{2}-\d{2}$/, IDK = k => /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/.test(k);
 const sidk = s => String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, '').replace(/^_+/, '').slice(0, 40), sid = s => sidk(s) || uid();
 const str = (s, n = 80) => String(s == null ? '' : s).slice(0, n), nn = (v, d = 0) => Number.isFinite(+v) ? +v : d, pos = v => Math.max(0, nn(v));
 const arr = a => Array.isArray(a) ? a : [], obj = o => (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
@@ -21,17 +21,19 @@ const item = i => { i = obj(i); return {n:str(i.n), kcal:pos(i.kcal), p:pos(i.p)
 function sanitize(raw){
   const o = obj(raw), F = fresh(), g = obj(o.goals);
   const legacy = e => { e = obj(e); if (!Array.isArray(e.s)) e.s = [...Array(Math.min(10, nn(e.sets, 3)))].map(() => ({kg:e.kg, reps:e.reps || 10})); return e; };
+  // A set marked dp is a drop set: it follows the set before it with no rest. The first set can never be a drop.
+  const sets = L => { const s = L.slice(0, MAXS).map((s, i) => ({kg:pos(obj(s).kg), reps:Math.max(1, nn(obj(s).reps, 1)), dp:i > 0 && !!obj(s).dp})); return s.length ? s : [{kg:0, reps:10, dp:false}]; };
+  const variant = e => { e = legacy(e); const nm = str(e.name, 60); return {name:nm, m:e.m === undefined ? guess(nm) : (MUS.includes(e.m) ? e.m : ''), s:sets(e.s)}; };
   return {
     goals: Object.fromEntries(Object.entries(F.goals).map(([k, d]) => [k, k === 'rest' ? Math.min(600, Math.round(g[k] === undefined ? d : pos(g[k]))) : g[k] === undefined ? d : pos(g[k])])),
     bw: Object.fromEntries(Object.entries(dict(o.bw, k => DATE.test(k), v => Math.round(Math.min(pos(v), 700) * 10) / 10)).filter(([, v]) => v > 0)),
     routines: (o.routines === undefined ? F.routines : arr(o.routines)).slice(0, 50).map(r => { r = obj(r);
-      return {id:sid(r.id), name:str(r.name, 60), ex:arr(r.ex).slice(0, 60).map(e => { e = legacy(e); const nm = str(e.name, 60);
-        return {id:sid(e.id), name:nm, m:e.m === undefined ? guess(nm) : (MUS.includes(e.m) ? e.m : ''), s:e.s.slice(0, 12).map(s => ({kg:pos(obj(s).kg), reps:Math.max(1, nn(obj(s).reps, 1))}))}; })}; }),
+      return {id:sid(r.id), name:str(r.name, 60), ex:arr(r.ex).slice(0, 60).map(e => ({id:sid(obj(e).id), ...variant(e), alts:arr(obj(e).alts).slice(0, MAXA).map(variant).filter(a => a.name)}))}; }),
     habits: (o.habits === undefined ? F.habits : arr(o.habits)).slice(0, 50).map(h => ({id:sid(obj(h).id), name:str(obj(h).name, 60)})),
     saved: arr(o.saved).slice(0, 300).map(x => ({id:sid(obj(x).id), n:str(obj(x).n, 60), items:arr(obj(x).items).slice(0, 40).map(item)})),
     days: dict(o.days, k => DATE.test(k), v => ({meals:arr(obj(v).meals).slice(0, 300).map(m => ({id:sid(obj(m).id), c:CATS.includes(obj(m).c) ? m.c : 'Snacks', ...item(m)})), water:arr(obj(v).water).slice(0, 200).map(pos)})),
-    done: dict(o.done, k => DATE.test(k), v => dict(v, IDK, a => arr(a).slice(0, 12).map(Boolean))),
-    log: dict(o.log, k => DATE.test(k), v => dict(v, IDK, x => { x = obj(x); return {n:str(x.n, 60), m:MUS.includes(x.m) ? x.m : '', r:str(x.r, 60), s:arr(x.s).slice(0, 12).map(s => ({kg:pos(obj(s).kg), reps:pos(obj(s).reps), d:!!obj(s).d}))}; })),
+    done: dict(o.done, k => DATE.test(k), v => dict(v, IDK, a => arr(a).slice(0, MAXS).map(Boolean))),
+    log: dict(o.log, k => DATE.test(k), v => dict(v, IDK, x => { x = obj(x); return {n:str(x.n, 60), m:MUS.includes(x.m) ? x.m : '', r:str(x.r, 60), s:arr(x.s).slice(0, MAXS).map((s, i) => ({kg:pos(obj(s).kg), reps:pos(obj(s).reps), d:!!obj(s).d, dp:i > 0 && !!obj(s).dp}))}; })),
     sel: dict(o.sel, k => DATE.test(k), sidk), sched: dict(o.sched, k => /^[0-6]$/.test(k), sidk), last: sidk(o.last),
     hdone: dict(o.hdone, k => DATE.test(k), a => arr(a).slice(0, 60).map(sidk))
   };
@@ -78,8 +80,12 @@ const dn = (d, e) => { const v = (S.done[d] || {})[e.id]; return Array.isArray(v
 const pct = (v, g) => g ? v / g : 0;
 const logEx = e => { const v = (S.done[cur] || {})[e.id] || [], L = S.log[cur] || (S.log[cur] = {});
   if (!v.some(Boolean)) { delete L[e.id]; return; }
-  L[e.id] = {n:e.name, m:e.m, r:(rt() || {}).name, s:e.s.map((s, i) => ({kg:s.kg, reps:s.reps, d:!!v[i]}))}; };
-const lastOf = e => { const d = Object.keys(S.log).filter(d => d < cur && S.log[d][e.id]).sort().pop(); return d ? S.log[d][e.id] : null; };
+  L[e.id] = {n:e.name, m:e.m, r:(rt() || {}).name, s:e.s.map((s, i) => ({kg:s.kg, reps:s.reps, d:!!v[i], dp:!!s.dp}))}; };
+// "Last time" is found by exercise name, so swapping to an alternative shows that alternative's own history.
+const lastOf = e => { const k = exKey(e.name), hit = x => x && exKey(x.n) === k && x.s.some(s => s.d);
+  const d = Object.keys(S.log).filter(d => d < cur && Object.values(S.log[d]).some(hit)).sort().pop();
+  return d ? (hit(S.log[d][e.id]) ? S.log[d][e.id] : Object.values(S.log[d]).find(hit)) : null; };
+const dropKg = kg => Math.max(0, Math.round(kg * .75 / 2.5) * 2.5);
 function muscles(days){ const v = {}, n = {};
   for (let i = 0; i < days; i++) Object.values(S.log[add(cur, -i)] || {}).forEach(x => x.s.forEach(s => { if (s.d && x.m) { v[x.m] = (v[x.m] || 0) + (s.kg * s.reps || s.reps); n[x.m] = (n[x.m] || 0) + 1; } }));
   return {v, n}; }
@@ -141,21 +147,26 @@ ${recentCard()}
     const ix = prIndex(), R = S.routines, r = rt(), ex = r ? r.ex : [], isDone = e => dn(cur, e) >= e.s.length, fin = ex.filter(isDone).length;
     return `<div class="rts">${R.map(x => `<button class="rt ${r && x.id === r.id ? 'on' : ''}" data-act="pick" data-id="${x.id}">${esc(x.name)}</button>`).join('')}</div>` +
     (r ? `<div class="card"><div class="sh"><h3>${esc(r.name)}</h3><span>${fin} of ${ex.length} done</span></div>` +
-      (ex.length ? ex.map(e => { const ok = isDone(e), dd = (S.done[cur] || {})[e.id] || [], L = lastOf(e), pri = prSetIdx(ix, e);
+      (ex.length ? ex.map(e => { const ok = isDone(e), dd = (S.done[cur] || {})[e.id] || [], L = lastOf(e), pri = prSetIdx(ix, e), alts = e.alts || [];
+        const vs = alts.length ? [{n:e.name, j:-1}, ...alts.map((a, j) => ({n:a.name, j}))].sort((a, b) => a.n.localeCompare(b.n)) : [];
+        let no = 0;
         return `<div class="ex ${ok ? 'fin' : ''}"><div class="top"><strong>${esc(e.name)}</strong><button class="dn ${ok ? 'on' : ''}" data-act="done" data-id="${e.id}">${ok ? 'All done ✓' : 'Mark all done'}</button></div>
-${e.s.map((s, i) => { const p = L && L.s[i]; return `<div class="sr"><button class="chip ${dd[i] ? 'on' : ''}" data-act="set" data-id="${e.id}" data-i="${i}" aria-label="Set ${i+1} done">${i+1}</button>
-<label>kg<input type="number" min="0" step="0.5" value="${s.kg}" data-f="kg" data-i="${i}" data-id="${e.id}"></label>
-<label>Reps<input type="number" min="1" value="${s.reps}" data-f="reps" data-i="${i}" data-id="${e.id}"></label>${pri === i || (p && p.d) ? `<small>${pri === i ? '<em class="pr">PR</em>' : ''}${p && p.d ? 'Last time: ' + p.kg + ' kg × ' + p.reps : ''}</small>` : ''}</div>`; }).join('')}
-<div class="acts" style="justify-content:flex-start;margin-top:10px"><button class="ghost" data-act="addset" data-id="${e.id}">+ Add set</button><button class="ghost" data-act="delset" data-id="${e.id}">− Remove set</button></div></div>`; }).join('')
+${vs.length ? `<div class="seg alt" role="group" aria-label="Choose which variation of this exercise you do today">${vs.map(v => `<button type="button" class="${v.j < 0 ? 'on' : ''}" aria-pressed="${v.j < 0}" data-act="swap" data-id="${e.id}" data-j="${v.j}">${esc(v.n)}</button>`).join('')}</div>` : ''}
+${e.s.map((s, i) => { const p = L && L.s[i]; if (!s.dp) no++; return `<div class="sr${s.dp ? ' drop' : ''}"><button class="chip ${dd[i] ? 'on' : ''}" data-act="set" data-id="${e.id}" data-i="${i}" aria-label="${s.dp ? 'Drop set after set ' + no : 'Set ' + no} done">${s.dp ? '↓' : no}</button>
+<label>${s.dp ? 'Drop kg' : 'kg'}<input type="number" min="0" step="0.5" value="${s.kg}" data-f="kg" data-i="${i}" data-id="${e.id}"></label>
+<label>Reps<input type="number" min="1" value="${s.reps}" data-f="reps" data-i="${i}" data-id="${e.id}"></label>${s.dp
+  ? `<button class="x dx" data-act="deldrop" data-id="${e.id}" data-i="${i}" aria-label="Remove this drop set">×</button>`
+  : `<button class="ghost dropb" data-act="adddrop" data-id="${e.id}" data-i="${i}" aria-label="Add a drop set after set ${no}">+ Drop</button>`}${pri === i || (p && p.d) ? `<small>${pri === i ? '<em class="pr">PR</em>' : ''}${p && p.d ? 'Last time: ' + p.kg + ' kg × ' + p.reps : ''}</small>` : ''}</div>`; }).join('')}
+<div class="acts" style="justify-content:flex-start;margin-top:10px"><button class="ghost" data-act="addset" data-id="${e.id}">+ Add set</button><button class="ghost" data-act="delset" data-id="${e.id}">− Remove set</button><button class="ghost" data-act="addalt" data-id="${e.id}">⇄ Add alternative</button></div></div>`; }).join('')
         : '<p class="empty">No exercises yet. Add some under Edit routines.</p>') +
-      `<p class="note">Set the kg and reps for each set. Any change is saved as your default for next time.${(S.goals.rest > 0 ? ' The rest timer starts when you tick a set.' : '')}</p></div>` : '<p class="empty">Create your first routine below.</p>') +
+      `<p class="note">Set the kg and reps for each set. Any change is saved as your default for next time. "+ Drop" adds a lighter set straight after, with no rest in between. "Add alternative" lets you swap an exercise (say, incline smith for incline dumbbell) without copying the routine.${(S.goals.rest > 0 ? ' The rest timer starts when you tick a set, and waits until the last drop of a drop set.' : '')}</p></div>` : '<p class="empty">Create your first routine below.</p>') +
 `<details class="card" ${r ? '' : 'open'}><summary>Edit routines and weekly schedule</summary>
 <form id="rf" class="row"><input name="n" placeholder="New routine, e.g. Leg day" required><button class="pri">Create routine</button></form>
 <h3 style="margin-top:18px">Weekly schedule (opens the right routine automatically)</h3><div class="sched">${DN.map((n, i) => `<label class="f">${n}<select data-sch="${i}"><option value="">None</option>${R.map(x => `<option value="${x.id}" ${S.sched[i] === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`).join('')}</div>` +
 (r ? `<h3 style="margin-top:18px">${esc(r.name)}</h3><form id="ef" class="row"><input name="n" placeholder="New exercise" required><input name="s" type="number" min="1" max="10" placeholder="Sets" required><input name="r" type="number" min="1" placeholder="Reps" required><input name="w" type="number" min="0" step="0.5" placeholder="kg">
 <select name="m" aria-label="Muscle"><option value="">Muscle: auto</option>${MUS.map(m => `<option>${m}</option>`).join('')}</select><button class="pri">Add</button></form>` +
-  ex.map(e => `<div class="li" data-ex="${e.id}"><button class="grip" data-grip="${e.id}" aria-label="Drag to reorder ${esc(e.name)}. Arrow keys also work."><svg viewBox="0 0 14 22" width="14" height="22" aria-hidden="true"><g fill="currentColor"><circle cx="3.5" cy="4" r="1.7"/><circle cx="10.5" cy="4" r="1.7"/><circle cx="3.5" cy="11" r="1.7"/><circle cx="10.5" cy="11" r="1.7"/><circle cx="3.5" cy="18" r="1.7"/><circle cx="10.5" cy="18" r="1.7"/></g></svg></button><div class="g">${esc(e.name)}<small><select class="ms" data-mu="${e.id}" aria-label="Muscle"><option value="">No muscle</option>${MUS.map(m => `<option ${e.m === m ? 'selected' : ''}>${m}</option>`).join('')}</select></small></div>
-<button class="x" data-act="ren" data-id="${e.id}" aria-label="Rename">✎</button><button class="x" data-act="dele" data-id="${e.id}" aria-label="Remove ${esc(e.name)}">×</button></div>`).join('') +
+  ex.map(e => `<div class="li" data-ex="${e.id}"><button class="grip" data-grip="${e.id}" aria-label="Drag to reorder ${esc(e.name)}. Arrow keys also work."><svg viewBox="0 0 14 22" width="14" height="22" aria-hidden="true"><g fill="currentColor"><circle cx="3.5" cy="4" r="1.7"/><circle cx="10.5" cy="4" r="1.7"/><circle cx="3.5" cy="11" r="1.7"/><circle cx="10.5" cy="11" r="1.7"/><circle cx="3.5" cy="18" r="1.7"/><circle cx="10.5" cy="18" r="1.7"/></g></svg></button><div class="g">${esc(e.name)}<small><select class="ms" data-mu="${e.id}" aria-label="Muscle"><option value="">No muscle</option>${MUS.map(m => `<option ${e.m === m ? 'selected' : ''}>${m}</option>`).join('')}</select></small>${(e.alts || []).length ? `<small class="alts">Alternatives: ${e.alts.map((a, j) => `<span>${esc(a.name)}<button class="x" data-act="delalt" data-id="${e.id}" data-j="${j}" aria-label="Remove the alternative ${esc(a.name)}">×</button></span>`).join('')}</small>` : ''}</div>
+<button class="x" data-act="addalt" data-id="${e.id}" aria-label="Add an alternative to ${esc(e.name)}">⇄</button><button class="x" data-act="ren" data-id="${e.id}" aria-label="Rename">✎</button><button class="x" data-act="dele" data-id="${e.id}" aria-label="Remove ${esc(e.name)}">×</button></div>`).join('') +
   `<div class="acts" style="justify-content:flex-start;margin-top:12px"><button class="ghost" data-act="renr">Rename routine</button><button class="ghost" data-act="clearday">Reset today's ticks</button><button class="ghost" data-act="delr" style="color:var(--bad)">Delete routine</button></div>` : '') + '</details>';
   },
   prog(){
@@ -166,7 +177,7 @@ ${e.s.map((s, i) => { const p = L && L.s[i]; return `<div class="sr"><button cla
 <div class="card"><h3>Volume by muscle (kg × reps)</h3>${list.length ? list.map(m => `<div class="mrow"><span>${m}</span><div class="bar"><i style="width:${v[m]/max*100}%;background:${heat(v[m], max)}"></i></div><b>${Math.round(v[m]).toLocaleString('en-GB')}</b><small>${n[m]} sets</small></div>`).join('') : '<p class="empty">Tick some sets in Training and your muscles will light up here.</p>'}</div>
 ${recordsCard(ix)}${exerciseCard(ix)}${bwCard()}
 <div class="card"><h3>Workout history</h3>${dates.length ? dates.map(d => { const es = Object.values(S.log[d]), vol = sum(es, x => sum(x.s.filter(s => s.d), s => s.kg * s.reps));
-  return `<details class="hs"><summary><b>${dt(d).toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'})}</b> ${esc(es[0].r || '')} <span>${Math.round(vol).toLocaleString('en-GB')} kg</span></summary>${es.map(x => `<p class="hl"><strong>${esc(x.n)}</strong> ${x.s.filter(s => s.d).map(s => s.kg + '×' + s.reps).join(', ')}</p>`).join('')}</details>`; }).join('') : '<p class="empty">No workouts logged yet.</p>'}</div>`;
+  return `<details class="hs"><summary><b>${dt(d).toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'})}</b> ${esc(es[0].r || '')} <span>${Math.round(vol).toLocaleString('en-GB')} kg</span></summary>${es.map(x => `<p class="hl"><strong>${esc(x.n)}</strong> ${x.s.filter(s => s.d).map(s => (s.dp ? '↓ ' : '') + s.kg + '×' + s.reps).join(', ')}</p>`).join('')}</details>`; }).join('') : '<p class="empty">No workouts logged yet.</p>'}</div>`;
   },
   set(){
     const safeCard = () => { const L = copies(); return L.length ? `<div class="card"><h3>Safety copies</h3><p class="note" style="margin:0 0 6px">Before sync replaces or combines anything, a copy of this device's data is kept here. Restoring adds the copy back and keeps your current data.</p>${L.map((c, i) => `<div class="li"><div class="g">${new Date(c.t).toLocaleString('en-GB', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}<small>${esc(String(c.why || '').slice(0, 60))}</small></div><button class="ghost" data-act="restore" data-i="${i}">Restore</button></div>`).join('')}</div>` : ''; };
@@ -427,13 +438,13 @@ const exKey = n => String(n).trim().toLowerCase(), e1 = s => s.kg * (1 + Math.mi
 function prIndex(){
   const m = {};
   Object.keys(S.log).sort().forEach(d => Object.values(S.log[d]).forEach(x => { const k = exKey(x.n); if (!k) return;
-    const ss = x.s.filter(s => s.d && s.reps > 0); if (!ss.length) return;
+    const ss = x.s.filter(s => s.d && s.reps > 0 && !s.dp); if (!ss.length) return;
     const r = m[k] || (m[k] = {n:x.n, days:{}}); r.n = x.n; (r.days[d] = r.days[d] || []).push(...ss); }));
   return m;
 }
 const earlier = (ix, k, d) => ix[k] ? Math.max(0, ...Object.keys(ix[k].days).filter(x => x < d).flatMap(x => ix[k].days[x].map(e1))) : 0;
 function prAt(x, i){   // did the set just ticked beat everything from earlier sessions and the rest of today?
-  const s = x.s[i]; if (!(s.kg > 0)) return false;
+  const s = x.s[i]; if (!(s.kg > 0) || s.dp) return false;
   const ix = prIndex(), k = exKey(x.name), p = earlier(ix, k, cur), l = ((ix[k] || {days:{}}).days[cur] || []).slice(), j = l.findIndex(o => o.kg === s.kg && o.reps === s.reps);
   if (j >= 0) l.splice(j, 1);
   return p > 0 && e1(s) > p && e1(s) > Math.max(0, ...l.map(e1));
@@ -441,7 +452,7 @@ function prAt(x, i){   // did the set just ticked beat everything from earlier s
 function prSetIdx(ix, e){
   const k = exKey(e.name), rec = ix[k], L = (S.log[cur] || {})[e.id]; if (!rec || !L) return -1;
   const prior = earlier(ix, k, cur), best = Math.max(0, ...(rec.days[cur] || []).map(e1)); if (!(prior > 0 && best > prior)) return -1;
-  return L.s.findIndex(s => s.d && s.reps > 0 && e1(s) === best);
+  return L.s.findIndex(s => s.d && s.reps > 0 && !s.dp && e1(s) === best);
 }
 let pex = '', pmet = 'w';
 const METS = {w:'Top weight', e:'Est. 1RM', v:'Volume'};
@@ -526,9 +537,29 @@ document.addEventListener('click', e => {
   else if (a === 'hab') { const h = S.hdone[cur] || (S.hdone[cur] = []), i = h.indexOf(D.id); i < 0 ? h.push(D.id) : h.splice(i, 1); }
   else if (a === 'delh') S.habits = S.habits.filter(h => h.id !== D.id);
   else if (a === 'set') { const m = S.done[cur] || (S.done[cur] = {}), v = m[D.id] || (m[D.id] = []); v[+D.i] = !v[+D.i]; logEx(x);
-    if (v[+D.i]) { startRest(); const q = x.s[+D.i]; if (prAt(x, +D.i)) { toast('New personal record! ' + x.name + ' ' + q.kg + ' kg × ' + q.reps); fx.push([`.chip[data-id="${D.id}"][data-i="${D.i}"]`, 'burst']); } } }
-  else if (a === 'addset') { x.s.push({...x.s[x.s.length - 1]}); logEx(x); }
+    if (v[+D.i]) { const nx = x.s[+D.i + 1]; if (!(nx && nx.dp && !v[+D.i + 1])) startRest(); const q = x.s[+D.i]; if (prAt(x, +D.i)) { toast('New personal record! ' + x.name + ' ' + q.kg + ' kg × ' + q.reps); fx.push([`.chip[data-id="${D.id}"][data-i="${D.i}"]`, 'burst']); } } }
+  else if (a === 'addset') { if (x.s.length >= MAXS) return toast('That is the most sets one exercise can have'); const b = x.s.filter(s => !s.dp).pop() || x.s[0]; x.s.push({kg:b.kg, reps:b.reps, dp:false}); logEx(x); }
   else if (a === 'delset') { if (x.s.length > 1) { x.s.pop(); const v = (S.done[cur] || {})[x.id]; if (v) v.length = Math.min(v.length, x.s.length); logEx(x); } }
+  else if (a === 'adddrop') {   // goes after this set and any drops already chained to it, 25% lighter than the one before
+    if (x.s.length >= MAXS) return toast('That is the most sets one exercise can have');
+    let j = +D.i + 1; while (x.s[j] && x.s[j].dp) j++;
+    const p = x.s[j - 1]; x.s.splice(j, 0, {kg:dropKg(p.kg), reps:p.reps, dp:true});
+    const v = (S.done[cur] || {})[x.id]; if (v && v.length > j) v.splice(j, 0, false); logEx(x);
+  }
+  else if (a === 'deldrop') { const i = +D.i; if (!(x.s[i] && x.s[i].dp)) return; x.s.splice(i, 1); const v = (S.done[cur] || {})[x.id]; if (v) v.splice(i, 1); logEx(x); }
+  else if (a === 'addalt') {
+    if (!x) return; x.alts = x.alts || []; if (x.alts.length >= MAXA) return toast('An exercise can have up to ' + MAXA + ' alternatives');
+    const n = (prompt('Alternative to "' + x.name + '", e.g. Incline dumbbell press') || '').trim().slice(0, 60); if (!n) return;
+    if ([x.name, ...x.alts.map(o => o.name)].some(o => exKey(o) === exKey(n))) return toast('That one is already there');
+    x.alts.push({name:n, m:guess(n) || x.m, s:x.s.map(s => ({...s}))}); toast('Alternative added. Tap it above the sets to switch.');
+  }
+  else if (a === 'delalt') { if (x && x.alts) x.alts.splice(+D.j, 1); }
+  else if (a === 'swap') {   // the chosen variation takes over the slot and keeps its own kg and reps; the old one is kept as an alternative
+    const j = +D.j, o = x && (x.alts || [])[j]; if (!o) return;
+    const dd = (S.done[cur] || {})[x.id];
+    if (dd && dd.some(Boolean)) { if (!confirm('You ticked sets of ' + x.name + ' today. Switch to ' + o.name + '? Those ticks are cleared.')) return; delete S.done[cur][x.id]; logEx(x); }
+    x.alts[j] = {name:x.name, m:x.m, s:x.s}; x.name = o.name; x.m = o.m; x.s = o.s;
+  }
   else if (a === 'pick') S.sel[cur] = S.last = D.id;
   else if (a === 'done') { const m = S.done[cur] || (S.done[cur] = {}); m[x.id] = x.s.map(() => dn(cur, x) < x.s.length); logEx(x); }
   else if (a === 'dele') rt().ex = plan().filter(y => y.id !== D.id);
@@ -564,7 +595,7 @@ document.addEventListener('submit', e => {
   if (id === 'sf') { sq = f.q; search(f.q); return; }
   if (id === 'af') { passAuth(f.e, f.pw); return; }
   if (id === 'mf') putItems([{n:f.n.trim(), kcal:+f.k, p:+f.p || 0, cb:+f.cb || 0, f:+f.f || 0}], f.c);
-  if (id === 'ef') rt().ex.push({id:uid(), name:f.n.trim(), m:f.m || guess(f.n), s:[...Array(Math.min(10, +f.s))].map(() => ({kg:+f.w || 0, reps:+f.r}))});
+  if (id === 'ef') rt().ex.push({id:uid(), name:f.n.trim(), m:f.m || guess(f.n), s:[...Array(Math.min(10, +f.s))].map(() => ({kg:+f.w || 0, reps:+f.r, dp:false})), alts:[]});
   if (id === 'rf') { const r = mk(f.n.trim(), []); S.routines.push(r); S.sel[cur] = S.last = r.id; toast('Routine created'); }
   if (id === 'bf') { const v = Math.round(+f.kg * 10) / 10; if (v > 0 && v <= 700) { S.bw[cur] = v; toast('Weight logged'); } else toast('Enter a weight in kg'); }
   if (id === 'hf') S.habits.push({id:uid(), name:f.n.trim()});
